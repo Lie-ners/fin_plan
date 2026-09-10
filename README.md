@@ -12,7 +12,8 @@ A local-first finance dashboard that imports Excel, CSV, or TSV bank statements,
 - Monthly allowance-vs-spending chart.
 - Dynamic paycheck planner whose columns follow the user's allocation categories.
 - Source spreadsheet viewer showing the masked uploaded worksheet in a spreadsheet-style table with row/column headings, sticky headers, wrapped text, and scrolling for large sheets.
-- Manual transactions can be added to dashboard calculations without modifying the source spreadsheet preview.
+- Manual transactions are appended to the source-sheet preview using the detected statement columns. Date, description, currency, debit/credit, and optional category/type fields are filled when available; bank-only fields remain blank.
+- **Simplify & export** downloads an Excel-compatible CSV with Date, Description, Category, Type, Amount, Currency, Counts as Spend, and Source columns, including both imported and manually entered transactions.
 - Motion and hover feedback across buttons, cards, allocation bars, charts, dialogs, and page entry, with `prefers-reduced-motion` support.
 
 ## Privacy model
@@ -63,4 +64,6 @@ The importer automatically detects the header row, so the transaction table does
 - `styles.css` — black/orange responsive design, spreadsheet-viewer styles, and motion effects.
 - `parser.js` — local Excel/CSV/TSV import, masking, transaction categorization, and masked source-row retention.
 - `upload.js` — upload-page behavior and tab-scoped handoff to the console.
-- `console.js` — dashboard rendering, flexible allocation planner, manual entries, and spreadsheet viewer.
+- `console.js` — dashboard rendering, flexible allocation planner, manual entries, spreadsheet viewer, and simplified CSV export.
+
+- Manual spreadsheet rows are merged into the transaction block by date, preserving the newest-to-oldest display order.

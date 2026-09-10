@@ -753,3 +753,49 @@ dialog[open]::backdrop { animation: backdropIn .2s ease both; }
     transition-duration: .01ms !important;
   }
 }
+
+/* Spreadsheet actions + manual-entry rows */
+.sheet-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+.sheet-export-button {
+  white-space: nowrap;
+  min-width: 154px;
+}
+.sheet-export-button.export-complete {
+  transform: translateY(-1px) scale(1.015);
+  box-shadow: 0 0 0 1px rgba(255,176,0,.22), 0 14px 30px rgba(255,122,24,.2);
+}
+.sheet-table .sheet-manual-row td {
+  background: linear-gradient(90deg, rgba(255,122,24,.085), rgba(255,176,0,.025));
+  border-bottom-color: rgba(255,122,24,.22);
+}
+.sheet-table .sheet-manual-row:nth-child(even) td {
+  background: linear-gradient(90deg, rgba(255,122,24,.095), rgba(255,176,0,.03));
+}
+.sheet-table .sheet-manual-row td:first-of-type {
+  box-shadow: inset 3px 0 0 rgba(255,176,0,.72);
+}
+.sheet-table .sheet-manual-row .sheet-row-number {
+  color: var(--accent-2);
+  background: #1a120c;
+  border-right-color: rgba(255,122,24,.34);
+}
+.sheet-table .sheet-manual-row:hover td {
+  background: rgba(255,122,24,.13);
+}
+
+@media (max-width: 700px) {
+  .sheet-heading-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+  .sheet-export-button {
+    flex: 1 1 170px;
+  }
+}

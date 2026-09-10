@@ -192,10 +192,19 @@
     const first = txs[0]?.date;
     const last = txs[txs.length - 1]?.date;
     const st = state.statement || {};
+    const balances = adjustedStatementBalances();
+
     $("rangeMeta").textContent = first && last ? `${dateFmt(first)} – ${dateFmt(last)}` : "—";
-    $("availableMeta").textContent = st.availableBalance != null ? money(st.availableBalance) : "—";
+
+    $("availableMeta").textContent = balances.availableBalance != null
+      ? money(balances.availableBalance)
+      : "—";
+
     $("statementDateMeta").textContent = dateFmt(st.statementDate);
-    $("snapshotBalance").textContent = st.availableBalance != null ? money(st.availableBalance) : "—";
+
+    $("snapshotBalance").textContent = balances.availableBalance != null
+      ? money(balances.availableBalance)
+      : "—";
     $("snapshotDate").textContent = st.statementDate ? `as at ${dateFmt(st.statementDate)}` : "No statement date found";
     $("footerMeta").textContent = first && last
       ? `Imported statement range: ${dateFmt(first)} – ${dateFmt(last)}. Source rows and transactions stay only in this tab session.`
@@ -325,6 +334,140 @@
     });
   }
 
+  function manualTransactions() {
+    return state.transactions.filter(transaction => String(transaction.id || "").startsWith("manual-"));
+  }
+  
+  function manualBalanceAdjustment() {
+    return manualTransactions().reduce((total, transaction) => {
+      return total + Number(transaction.amount || 0);
+    }, 0);
+  }
+
+  function adjustedStatementBalances() {
+    const statement = state.statement || {};
+    const adjustment = manualBalanceAdjustment();
+
+    return {
+      availableBalance: statement.availableBalance != null
+        ? Math.round((Number(statement.availableBalance) + adjustment) * 100) / 100
+        : null,
+
+      ledgerBalance: statement.ledgerBalance != null
+        ? Math.round((Number(statement.ledgerBalance) + adjustment) * 100) / 100
+        : null
+    };
+  }
+
+  function sheetColumnIndex(headers, ...names) {
+    const normalized = headers.map(normalizeSheetHeader);
+    for (const name of names) {
+      const index = normalized.indexOf(normalizeSheetHeader(name));
+      if (index >= 0) return index;
+    }
+    return -1;
+  }
+
+  function manualSheetRow(transaction, headerRow, maxColumns) {
+    const row = Array.from({ length: maxColumns }, () => "");
+    const put = (value, ...names) => {
+      const index = sheetColumnIndex(headerRow, ...names);
+      if (index >= 0) row[index] = value;
+    };
+
+    put(transaction.date, "Transaction Date", "Date");
+    put(transaction.description, "Description", "Transaction Description");
+    put(transaction.currency || currencyCode(), "Currency");
+    put(transaction.category || "", "Category");
+    const type = transaction.amount > 0 ? "Income" : transaction.excludeFromSpending ? "Reserve transfer" : "Expense";
+    put(type, "Type", "Transaction Type");
+    put(countsAsSpend(transaction) ? "Yes" : "No", "Counts as Spend", "Counts as Spending");
+
+    if (transaction.amount < 0) {
+      put(Math.abs(transaction.amount), "Debit Amount", "Debit");
+    } else if (transaction.amount > 0) {
+      put(transaction.amount, "Credit Amount", "Credit");
+    }
+
+    return row;
+  }
+
+  function sheetRowsWithManualEntries() {
+    const sourceRows = Array.isArray(state.sheetRows) ? state.sheetRows.map(row => Array.isArray(row) ? row.slice() : []) : [];
+    if (!sourceRows.length) return { rows: [], manualRowIndexes: new Set(), manualCount: 0 };
+      const balances = adjustedStatementBalances();
+
+      sourceRows.forEach(row => {
+        const label = String(row?.[0] ?? "").trim().toLowerCase();
+
+        if (label.startsWith("available balance") && balances.availableBalance != null) {
+          row[1] = balances.availableBalance;
+        }
+
+        if (label.startsWith("ledger balance") && balances.ledgerBalance != null) {
+          row[1] = balances.ledgerBalance;
+        }
+      });
+
+    while (sourceRows.length && !sourceRows[sourceRows.length - 1].some(value => value != null && String(value).trim() !== "")) {
+      sourceRows.pop();
+    }
+
+    const headerIndex = sheetHeaderIndex(sourceRows);
+    if (headerIndex < 0) return { rows: sourceRows, manualRowIndexes: new Set(), manualCount: 0 };
+
+    const headerRow = sourceRows[headerIndex] || [];
+    const maxColumns = Math.max(1, ...sourceRows.map(row => row.length), headerRow.length);
+    const dateColumn = sheetColumnIndex(headerRow, "Transaction Date", "Date");
+    const manuals = manualTransactions();
+    if (!manuals.length || dateColumn < 0) {
+      return { rows: sourceRows, manualRowIndexes: new Set(), manualCount: 0 };
+    }
+
+    const parser = window.FinanceStatementParser;
+    const parseRowDate = row => parser?.parseDateCell ? parser.parseDateCell(row?.[dateColumn]) : null;
+
+    // The uploaded statement is displayed newest-first. Identify its contiguous
+    // transaction block, merge manual rows into that block, and sort by date
+    // descending so a newly added latest transaction appears at the top.
+    let transactionEnd = headerIndex + 1;
+    while (transactionEnd < sourceRows.length && parseRowDate(sourceRows[transactionEnd])) {
+      transactionEnd++;
+    }
+
+    const importedEntries = sourceRows.slice(headerIndex + 1, transactionEnd).map((row, index) => ({
+      row,
+      date: parseRowDate(row) || "",
+      manual: false,
+      order: index
+    }));
+    const manualEntries = manuals.map((transaction, index) => ({
+      row: manualSheetRow(transaction, headerRow, maxColumns),
+      date: transaction.date || "",
+      manual: true,
+      order: index
+    }));
+
+    const mergedEntries = [...importedEntries, ...manualEntries].sort((a, b) => {
+      const byDate = b.date.localeCompare(a.date);
+      if (byDate) return byDate;
+      if (a.manual !== b.manual) return a.manual ? -1 : 1;
+      return a.order - b.order;
+    });
+
+    const rows = [
+      ...sourceRows.slice(0, headerIndex + 1),
+      ...mergedEntries.map(entry => entry.row),
+      ...sourceRows.slice(transactionEnd)
+    ];
+    const manualRowIndexes = new Set();
+    mergedEntries.forEach((entry, index) => {
+      if (entry.manual) manualRowIndexes.add(headerIndex + 1 + index);
+    });
+
+    return { rows, manualRowIndexes, manualCount: manuals.length };
+  }
+
   function formattedSheetCell(value, rowIndex, colIndex, headerIndex, dateColumns, row) {
     if (value == null || value === "") return "";
     const parser = window.FinanceStatementParser;
@@ -342,7 +485,7 @@
   }
 
   function renderSheet() {
-    const rows = Array.isArray(state.sheetRows) ? state.sheetRows : [];
+    const { rows, manualRowIndexes, manualCount } = sheetRowsWithManualEntries();
     if (!rows.length) {
       $("sheetDimensions").textContent = "Preview unavailable";
       $("sheetTable").innerHTML = `<tbody><tr><td class="sheet-empty">Re-upload the statement once to populate the source spreadsheet preview. Older tab sessions created before this viewer was added do not contain the original worksheet rows.</td></tr></tbody>`;
@@ -353,19 +496,70 @@
     const headerIndex = sheetHeaderIndex(rows);
     const headerRow = headerIndex >= 0 ? rows[headerIndex] : [];
     const dateColumns = new Set(headerRow.map((value, index) => normalizeSheetHeader(value).includes("date") ? index : -1).filter(index => index >= 0));
-    $("sheetDimensions").textContent = `${rows.length} rows · ${maxColumns} columns`;
+    $("sheetDimensions").textContent = `${rows.length} rows · ${maxColumns} columns${manualCount ? ` · ${manualCount} manual` : ""}`;
 
     const columnHeaders = Array.from({ length: maxColumns }, (_, index) => `<th scope="col" class="sheet-column-letter">${excelColumnName(index)}</th>`).join("");
     const body = rows.map((row, rowIndex) => {
+      const isManual = manualRowIndexes.has(rowIndex);
       const cells = Array.from({ length: maxColumns }, (_, colIndex) => {
         const text = formattedSheetCell(row?.[colIndex], rowIndex, colIndex, headerIndex, dateColumns, row);
         const className = rowIndex === headerIndex ? "sheet-data-header" : "";
         return `<td class="${className}"><span>${text ? escapeHtml(text) : "&nbsp;"}</span></td>`;
       }).join("");
-      return `<tr class="${rowIndex === headerIndex ? "sheet-source-header" : ""}"><th scope="row" class="sheet-row-number">${rowIndex + 1}</th>${cells}</tr>`;
+      const rowClasses = [rowIndex === headerIndex ? "sheet-source-header" : "", isManual ? "sheet-manual-row" : ""].filter(Boolean).join(" ");
+      return `<tr class="${rowClasses}"><th scope="row" class="sheet-row-number"${isManual ? ` title="Manual entry"` : ""}>${rowIndex + 1}</th>${cells}</tr>`;
     }).join("");
 
     $("sheetTable").innerHTML = `<thead><tr><th class="sheet-corner" aria-label="Row and column headings"></th>${columnHeaders}</tr></thead><tbody>${body}</tbody>`;
+  }
+
+  function simplifiedTransactionRows() {
+    return state.transactions.map(transaction => {
+      const type = transaction.amount > 0 ? "Income" : transaction.excludeFromSpending ? "Reserve transfer" : "Expense";
+      return [
+        transaction.date || "",
+        transaction.description || "",
+        transaction.category || "",
+        type,
+        Number(transaction.amount || 0),
+        transaction.currency || currencyCode(),
+        countsAsSpend(transaction) ? "Yes" : "No",
+        String(transaction.id || "").startsWith("manual-") ? "Manual" : "Imported"
+      ];
+    });
+  }
+
+  function csvCell(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    let text = String(value ?? "");
+    if (/^[=+@]/.test(text) || /^-(?!\d+(?:\.\d+)?$)/.test(text)) text = `'${text}`;
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  function exportSimplifiedTransactions() {
+    const header = ["Date", "Description", "Category", "Type", "Amount", "Currency", "Counts as Spend", "Source"];
+    const rows = simplifiedTransactionRows();
+    const csv = [header, ...rows].map(row => row.map(csvCell).join(",")).join("\r\n");
+    const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const sourceName = String(state.statement?.fileName || "finance-transactions").replace(/\.[^.]+$/, "");
+    const safeName = sourceName.replace(/[\\/:*?"<>|]+/g, "-").trim() || "finance-transactions";
+    link.href = url;
+    link.download = `${safeName}-simplified.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    const button = $("simplifyExportBtn");
+    const original = button.textContent;
+    button.textContent = `Exported ${rows.length} rows`;
+    button.classList.add("export-complete");
+    window.setTimeout(() => {
+      button.textContent = original;
+      button.classList.remove("export-complete");
+    }, 1500);
   }
 
   function renderAll() {
@@ -518,6 +712,8 @@
     renderAll();
     flashRefresh();
   });
+
+  $("simplifyExportBtn").addEventListener("click", exportSimplifiedTransactions);
 
   const txDialog = $("transactionDialog");
   $("addTransactionBtn").addEventListener("click", () => {
