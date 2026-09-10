@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Upload Statement | Flexible Finance Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <input id="statementUpload" class="visually-hidden" type="file" accept=".xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+
+  <section class="upload-view" aria-labelledby="uploadTitle">
+    <div class="upload-card">
+      <p class="eyebrow">Local-first personal finance</p>
+      <h1 id="uploadTitle">Upload your bank statement</h1>
+      <p class="subhead">Start by choosing an Excel, CSV, or TSV bank statement. You can also mask account numbers or other sensitive text before the finance console opens, then build a flexible paycheck allocation with your own categories or a recommended preset.</p>
+
+      <label id="dropZone" class="drop-zone" for="statementUpload">
+        <span class="upload-icon" aria-hidden="true">↥</span>
+        <strong>Choose Excel or CSV statement</strong>
+        <small>Supports DBS-style .xlsx exports and common .csv/.tsv files</small>
+      </label>
+
+      <section class="mask-card" aria-labelledby="maskTitle">
+        <div class="mask-card-heading">
+          <div>
+            <p class="eyebrow">Optional masking</p>
+            <h2 id="maskTitle">Hide account numbers before import</h2>
+          </div>
+          <button id="addMaskBtn" class="button ghost" type="button">Add another</button>
+        </div>
+        <p class="muted small">Enter any account number, card fragment, name, or reference text you want replaced throughout the imported statement. Examples: replace your main account with <strong>[Bank Account]</strong> and savings account with <strong>[Savings Account]</strong>.</p>
+        <div id="maskRows" class="mask-rows"></div>
+      </section>
+
+      <div class="privacy-note">
+        <strong>No embedded bank data.</strong> The statement is parsed and masked in your browser, then kept in this tab's session storage so refresh stays on the console. It is not saved to localStorage.
+      </div>
+
+      <button id="continueSessionBtn" class="button ghost full-width" type="button" hidden>Continue current console session</button>
+
+      <details class="help-card">
+        <summary>Expected columns</summary>
+        <p>The importer looks for a transaction table with columns like Transaction Date, Statement Code, Description, Currency, Debit Amount, and Credit Amount.</p>
+      </details>
+
+      <p id="uploadError" class="error" role="alert" hidden></p>
+    </div>
+  </section>
+
+  <script src="parser.js"></script>
+  <script src="upload.js"></script>
+</body>
+</html>

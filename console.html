@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Finance Console | Flexible Finance Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <input id="statementUpload" class="visually-hidden" type="file" accept=".xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+  <div id="appView" class="shell">
+    <header class="topbar entrance entrance-1">
+      <div>
+        <p class="eyebrow">Flexible finance tracker</p>
+        <h1>Personal Finance Dashboard</h1>
+      </div>
+      <div class="top-actions">
+        <label class="select-wrap"><span>Period</span><select id="periodSelect"></select></label>
+        <button id="uploadAnotherBtn" class="button ghost">Upload another</button>
+        <button id="addTransactionBtn" class="button primary">Add transaction</button>
+      </div>
+    </header>
+
+    <section class="privacy-note entrance entrance-2">
+      <strong>Local session:</strong> this dashboard runs entirely in your browser. Your uploaded statement stays available during this tab session, including refresh, and is cleared when the tab/window is closed.
+    </section>
+
+    <section class="statement-strip entrance entrance-3" aria-label="Statement details">
+      <div><span>Imported period</span><strong id="rangeMeta">—</strong></div>
+      <div><span>Available balance</span><strong id="availableMeta">—</strong></div>
+      <div><span>Statement date</span><strong id="statementDateMeta">—</strong></div>
+    </section>
+
+    <main>
+      <section class="kpi-grid entrance entrance-4" aria-label="Budget summary">
+        <article class="kpi featured">
+          <span class="kpi-label">Spending allowance left</span>
+          <strong id="remainingKpi">S$0.00</strong>
+          <small id="remainingHint">Spendable allocation minus spending</small>
+        </article>
+        <article class="kpi">
+          <span class="kpi-label">Payroll received</span>
+          <strong id="payrollKpi">S$0.00</strong>
+          <small id="payrollHint">Detected payroll credits</small>
+        </article>
+        <article class="kpi">
+          <span class="kpi-label">Actual spending</span>
+          <strong id="spendingKpi">S$0.00</strong>
+          <small>Reserve transfers excluded</small>
+        </article>
+        <article class="kpi">
+          <span class="kpi-label">Reserve moved out</span>
+          <strong id="reserveKpi">S$0.00</strong>
+          <small id="reserveHint">Compared with non-spendable targets</small>
+        </article>
+      </section>
+
+      <section class="two-col top-panels entrance entrance-5">
+        <article class="panel allocation-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Your paycheck plan</p>
+              <h2 id="allocationTitle">Flexible allocation</h2>
+            </div>
+            <button id="settingsBtn" class="button ghost">Edit plan</button>
+          </div>
+
+          <div id="allocationBar" class="allocation-bar" aria-label="Budget allocation"></div>
+          <div id="allocationCards" class="allocation-cards"></div>
+          <p class="muted small">Categories marked as spendable are combined into the spending allowance. Other categories are targets for savings, investing, debt, goals, or anything else you create; the statement cannot confirm their destination balances after money leaves this account.</p>
+        </article>
+
+        <article class="panel progress-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Allowance usage</p>
+              <h2>How much of your spendable allocation is used?</h2>
+            </div>
+            <span id="usageBadge" class="badge">0%</span>
+          </div>
+          <div class="big-progress"><div id="usageBar"></div></div>
+          <div class="progress-meta">
+            <span><b id="spentMeta">S$0.00</b> spent</span>
+            <span><b id="leftMeta">S$0.00</b> left</span>
+          </div>
+          <div id="budgetMessage" class="budget-message"></div>
+          <div class="snapshot">
+            <span>Statement snapshot</span>
+            <strong id="snapshotBalance">—</strong>
+            <small id="snapshotDate">Upload a statement to start</small>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel trend-panel entrance entrance-6">
+        <div class="panel-heading">
+          <div><p class="eyebrow">Trend</p><h2>Monthly allowance vs spending</h2></div>
+        </div>
+        <div id="monthlyChart" class="monthly-chart" aria-label="Monthly allowance versus spending chart"></div>
+      </section>
+
+      <section class="panel paychecks-panel entrance entrance-7">
+        <div class="panel-heading">
+          <div><p class="eyebrow">Paycheck planner</p><h2>Detected payroll and target allocation</h2></div>
+          <span id="paycheckCount" class="muted"></span>
+        </div>
+        <div class="table-scroll paycheck-scroll">
+          <table id="paycheckTable">
+            <thead><tr id="paycheckHeader"></tr></thead>
+            <tbody id="paycheckRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel sheet-panel entrance entrance-8" aria-labelledby="sheetViewerTitle">
+        <div class="panel-heading sheet-heading">
+          <div>
+            <p class="eyebrow">Source workbook</p>
+            <h2 id="sheetViewerTitle">Uploaded spreadsheet</h2>
+            <p class="muted small sheet-help">The masked source sheet is shown as uploaded. Cells wrap automatically; scroll horizontally or vertically to inspect the full sheet.</p>
+          </div>
+          <span id="sheetDimensions" class="badge sheet-badge">—</span>
+        </div>
+        <div id="sheetViewport" class="sheet-viewport" tabindex="0" role="region" aria-label="Uploaded spreadsheet preview">
+          <table id="sheetTable" class="sheet-table" aria-label="Uploaded spreadsheet data"></table>
+        </div>
+      </section>
+    </main>
+
+    <footer class="entrance entrance-8">
+      <span id="footerMeta">No statement loaded in this tab session.</span>
+      <button id="clearStatementBtn" class="link-button">Clear current statement</button>
+    </footer>
+  </div>
+
+  <dialog id="transactionDialog">
+    <form id="transactionForm" method="dialog" class="dialog-card">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">Manual entry</p><h2>Add transaction</h2></div>
+        <button type="button" class="icon-button" data-close-dialog aria-label="Close">×</button>
+      </div>
+      <label>Date <input id="newDate" type="date" required /></label>
+      <label>Description <input id="newDescription" type="text" required placeholder="e.g. Lunch" /></label>
+      <div class="form-grid">
+        <label>Type
+          <select id="newType"><option value="expense">Expense</option><option value="income">Income</option><option value="reserve">Reserve transfer</option></select>
+        </label>
+        <label>Amount (SGD) <input id="newAmount" type="number" min="0.01" step="0.01" required /></label>
+      </div>
+      <label>Category <select id="newCategory"></select></label>
+      <p class="muted small dialog-note">Manual entries affect dashboard totals only; they do not modify the uploaded spreadsheet preview.</p>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog>Cancel</button><button class="button primary" value="default">Add</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog" class="wide-dialog">
+    <form id="settingsForm" method="dialog" class="dialog-card">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">Budget settings</p><h2>Build your paycheck allocation</h2></div>
+        <button type="button" class="icon-button" data-close-dialog aria-label="Close">×</button>
+      </div>
+
+      <section class="preset-section" aria-labelledby="presetHeading">
+        <div class="preset-heading">
+          <div>
+            <h3 id="presetHeading">Not sure where to start?</h3>
+            <p class="muted small">Apply a common budgeting framework, then rename, add, remove, or rebalance categories however you like.</p>
+          </div>
+        </div>
+        <div id="presetGrid" class="preset-grid"></div>
+      </section>
+
+      <div class="allocation-editor-heading">
+        <div>
+          <h3>Your categories</h3>
+          <p class="muted small">Spendable categories contribute to the allowance that is compared with actual statement spending.</p>
+        </div>
+        <button id="addAllocationBtn" type="button" class="button ghost">Add category</button>
+      </div>
+      <div id="allocationEditor" class="allocation-editor"></div>
+      <div class="allocation-total-row">
+        <span>Total allocation</span>
+        <strong id="allocationTotal">0%</strong>
+      </div>
+      <p id="splitError" class="error" hidden>Allocation percentages must add up to exactly 100%, and every category needs a name.</p>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog>Cancel</button><button class="button primary" value="default">Save plan</button></div>
+    </form>
+  </dialog>
+
+  <script src="parser.js"></script>
+  <script src="console.js"></script>
+</body>
+</html>
