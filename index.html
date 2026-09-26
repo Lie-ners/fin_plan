@@ -14,24 +14,33 @@
     <div class="upload-card">
       <p class="eyebrow">Local-first personal finance</p>
       <h1 id="uploadTitle">Upload your bank statement</h1>
-      <p class="subhead">Start by choosing an Excel, CSV, or TSV bank statement. You can also mask account numbers or other sensitive text before the finance console opens, then build a flexible paycheck allocation with your own categories or a recommended preset.</p>
+      <p class="subhead">Set any masking rules you want first, then choose an Excel, CSV, or TSV bank statement. The masking rules are applied during import before the finance console opens.</p>
 
-      <label id="dropZone" class="drop-zone" for="statementUpload">
-        <span class="upload-icon" aria-hidden="true">↥</span>
-        <strong>Choose Excel or CSV statement</strong>
-        <small>Supports DBS-style .xlsx exports and common .csv/.tsv files</small>
-      </label>
-
-      <section class="mask-card" aria-labelledby="maskTitle">
+      <section class="mask-card setup-step" aria-labelledby="maskTitle">
         <div class="mask-card-heading">
           <div>
-            <p class="eyebrow">Optional masking</p>
-            <h2 id="maskTitle">Hide account numbers before import</h2>
+            <p class="eyebrow">Step 1 · Optional masking</p>
+            <h2 id="maskTitle">Hide sensitive details before import</h2>
           </div>
           <button id="addMaskBtn" class="button ghost" type="button">Add another</button>
         </div>
         <p class="muted small">Enter any account number, card fragment, name, or reference text you want replaced throughout the imported statement. Examples: replace your main account with <strong>[Bank Account]</strong> and savings account with <strong>[Savings Account]</strong>.</p>
         <div id="maskRows" class="mask-rows"></div>
+      </section>
+
+      <section class="upload-step setup-step" aria-labelledby="importTitle">
+        <div class="upload-step-heading">
+          <div>
+            <p class="eyebrow">Step 2 · Import statement</p>
+            <h2 id="importTitle">Choose your bank statement</h2>
+          </div>
+          <span class="file-type-badge">XLSX · CSV · TSV</span>
+        </div>
+        <label id="dropZone" class="drop-zone" for="statementUpload">
+          <span class="upload-icon" aria-hidden="true">↥</span>
+          <strong>Choose or drop your statement here</strong>
+          <small>Your Step 1 masking rules will be applied automatically during import</small>
+        </label>
       </section>
 
       <div class="privacy-note">
