@@ -1,13 +1,14 @@
 (() => {
   "use strict";
 
-  const SESSION_KEY = "financeTracker502525-currentStatement-v1";
   const $ = id => document.getElementById(id);
   const uploadInput = $("statementUpload");
   const dropZone = $("dropZone");
   const maskRows = $("maskRows");
   const addMaskBtn = $("addMaskBtn");
   const continueBtn = $("continueSessionBtn");
+  const dashboardLink = $("dashboardLink");
+  const signOutBtn = $("signOutBtn");
 
   function setUploadError(message) {
     const el = $("uploadError");
@@ -56,6 +57,8 @@
     if (!file) return;
     setUploadError("");
     dropZone.classList.remove("dragover");
+    dropZone.classList.add("is-importing");
+
     try {
       const { readStatementRows, importStatementFromRows } = window.FinanceStatementParser;
       const maskRules = getMaskRules();
@@ -65,30 +68,55 @@
         throw new Error("No transactions were found. Check that the file includes debit and credit amount columns.");
       }
       imported.maskRules = maskRules;
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(imported));
+      await window.FinanceData.importStatement(imported);
       window.location.href = "console.html";
     } catch (error) {
       console.error(error);
-      setUploadError(error?.message || "Could not read this file. Try exporting the statement as CSV.");
+      setUploadError(error?.message || "Could not import this file. Try exporting the statement as CSV.");
     } finally {
+      dropZone.classList.remove("is-importing");
       uploadInput.value = "";
     }
   }
 
-  uploadInput.addEventListener("change", e => handleFile(e.target.files?.[0]));
-  dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("dragover"); });
-  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
-  dropZone.addEventListener("drop", e => {
-    e.preventDefault();
-    handleFile(e.dataTransfer.files?.[0]);
+  async function init() {
+    try {
+      const user = await window.FinanceData.requireUser();
+      const accountName = String(user.user_metadata?.username || user.user_metadata?.display_name || "").trim() || String(user.email || "").split("@")[0] || "User";
+      $("accountName").textContent = accountName;
+      const hasData = await window.FinanceData.hasTransactions();
+      const importingAnother = new URLSearchParams(location.search).get("import") === "1";
+      if (hasData && !importingAnother) {
+        location.replace("console.html");
+        return;
+      }
+      continueBtn.hidden = !hasData;
+      dashboardLink.hidden = !hasData;
+      if (hasData) {
+        $("uploadTitle").textContent = "Import another statement";
+      }
+    } catch (error) {
+      if (error?.message !== "Authentication required.") {
+        setUploadError(error?.message || "Could not load your account.");
+      }
+    }
+  }
+
+  uploadInput.addEventListener("change", event => handleFile(event.target.files?.[0]));
+  dropZone.addEventListener("dragover", event => {
+    event.preventDefault();
+    dropZone.classList.add("dragover");
   });
-  addMaskBtn.addEventListener("click", () => addMaskRow());
-  if (continueBtn) continueBtn.addEventListener("click", () => { window.location.href = "console.html"; });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+  dropZone.addEventListener("drop", event => {
+    event.preventDefault();
+    handleFile(event.dataTransfer.files?.[0]);
+  });
+  addMaskBtn.addEventListener("click", addMaskRow);
+  continueBtn.addEventListener("click", () => { window.location.href = "console.html"; });
+  signOutBtn.addEventListener("click", () => window.FinanceData.signOut());
 
   createMaskRow("", "[Bank Account]");
   createMaskRow("", "[Savings Account]");
-
-  if (sessionStorage.getItem(SESSION_KEY) && continueBtn) {
-    continueBtn.hidden = false;
-  }
+  init();
 })();

@@ -8,28 +8,52 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <input id="statementUpload" class="visually-hidden" type="file" accept=".xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
   <div id="appView" class="shell">
-    <header class="topbar entrance entrance-1">
-      <div>
+    <header class="dashboard-hero entrance entrance-1">
+      <div class="dashboard-title-block">
         <p class="eyebrow">Flexible finance tracker</p>
         <h1>Personal Finance Dashboard</h1>
+        <p class="dashboard-greeting">Welcome back, <strong id="userName">—</strong>. Here’s your financial snapshot.</p>
       </div>
-      <div class="top-actions">
-        <label class="select-wrap"><span>Period</span><select id="periodSelect"></select></label>
-        <button id="uploadAnotherBtn" class="button ghost">Upload another</button>
-        <button id="addTransactionBtn" class="button primary">Add transaction</button>
+
+      <div class="dashboard-hero-side">
+        <div class="user-profile-chip" aria-label="Signed-in account">
+          <span id="userAvatar" class="user-avatar" aria-hidden="true">?</span>
+          <div class="user-profile-copy">
+            <small>Signed in as</small>
+            <strong id="userNameChip">—</strong>
+          </div>
+        </div>
+        <div class="dashboard-primary-actions">
+          <button id="importStatementBtn" class="button ghost" type="button">Import statement</button>
+          <button id="addTransactionBtn" class="button primary" type="button">Add transaction</button>
+          <button id="signOutBtn" class="button ghost subtle-action" type="button">Sign out</button>
+        </div>
       </div>
     </header>
 
-    <section class="privacy-note entrance entrance-2">
-      <strong>Local session:</strong> this dashboard runs entirely in your browser. Your uploaded statement stays available during this tab session, including refresh, and is cleared when the tab/window is closed.
+    <section class="dashboard-toolbar entrance entrance-2" aria-label="Dashboard controls">
+      <div class="toolbar-copy">
+        <span class="toolbar-kicker">Viewing period</span>
+        <strong>Choose the months included in your dashboard</strong>
+      </div>
+      <div class="period-range" aria-label="Finance date range">
+        <label><span>From</span><input id="periodFrom" type="month" /></label>
+        <span class="period-separator">to</span>
+        <label><span>To</span><input id="periodTo" type="month" /></label>
+        <button id="periodAllBtn" class="button ghost compact-button" type="button">All history</button>
+      </div>
+    </section>
+
+    <section class="privacy-note entrance entrance-2 account-note">
+      <span class="sync-dot" aria-hidden="true"></span>
+      <span><strong>Account synced.</strong> Masked finance data is stored with your account; the original workbook file is never uploaded.</span>
     </section>
 
     <section class="statement-strip entrance entrance-3" aria-label="Statement details">
-      <div><span>Imported period</span><strong id="rangeMeta">—</strong></div>
+      <div><span>Finance history</span><strong id="rangeMeta">—</strong></div>
       <div><span>Available balance</span><strong id="availableMeta">—</strong></div>
-      <div><span>Statement date</span><strong id="statementDateMeta">—</strong></div>
+      <div><span>Latest statement</span><strong id="statementDateMeta">—</strong></div>
     </section>
 
     <main>
@@ -63,12 +87,11 @@
               <p class="eyebrow">Your paycheck plan</p>
               <h2 id="allocationTitle">Flexible allocation</h2>
             </div>
-            <button id="settingsBtn" class="button ghost">Edit plan</button>
+            <button id="settingsBtn" class="button ghost" type="button">Edit plan</button>
           </div>
-
           <div id="allocationBar" class="allocation-bar" aria-label="Budget allocation"></div>
           <div id="allocationCards" class="allocation-cards"></div>
-          <p class="muted small">Categories marked as spendable are combined into the spending allowance. Other categories are targets for savings, investing, debt, goals, or anything else you create; the statement cannot confirm their destination balances after money leaves this account.</p>
+          <p class="muted small">Categories marked as spendable are combined into the spending allowance. Other categories are targets for savings, investing, debt, goals, or anything else you create.</p>
         </article>
 
         <article class="panel progress-panel">
@@ -86,16 +109,32 @@
           </div>
           <div id="budgetMessage" class="budget-message"></div>
           <div class="snapshot">
-            <span>Statement snapshot</span>
+            <span>Latest statement snapshot</span>
             <strong id="snapshotBalance">—</strong>
-            <small id="snapshotDate">Upload a statement to start</small>
+            <small id="snapshotDate">Import a statement to start</small>
           </div>
         </article>
       </section>
 
+      <section class="panel goals-panel entrance entrance-6" aria-labelledby="goalsTitle">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Saving goals</p>
+            <h2 id="goalsTitle">What are you saving for?</h2>
+            <p class="muted small goal-help">Track goals separately from transaction categories—for example a car under Vehicle, or a PS5 under Electronics &amp; Gaming.</p>
+          </div>
+          <button id="addGoalBtn" class="button primary" type="button">Add goal</button>
+        </div>
+        <div id="goalGrid" class="goal-grid"></div>
+      </section>
+
       <section class="panel trend-panel entrance entrance-6">
         <div class="panel-heading">
-          <div><p class="eyebrow">Trend</p><h2>Monthly allowance vs spending</h2></div>
+          <div>
+            <p class="eyebrow">Trend</p>
+            <h2>Allowance vs spending across your selected months</h2>
+          </div>
+          <span id="periodSummary" class="badge">—</span>
         </div>
         <div id="monthlyChart" class="monthly-chart" aria-label="Monthly allowance versus spending chart"></div>
       </section>
@@ -116,9 +155,9 @@
       <section class="panel sheet-panel entrance entrance-8" aria-labelledby="sheetViewerTitle">
         <div class="panel-heading sheet-heading">
           <div>
-            <p class="eyebrow">Source workbook</p>
+            <p class="eyebrow">Latest source workbook</p>
             <h2 id="sheetViewerTitle">Uploaded spreadsheet</h2>
-            <p class="muted small sheet-help">The masked source sheet is shown as uploaded, with manual entries appended using the same columns. Cells wrap automatically; scroll horizontally or vertically to inspect the full sheet. Simplify &amp; export downloads a clean Excel-compatible CSV.</p>
+            <p class="muted small sheet-help">The most recently imported masked source sheet is shown here. Manual transactions are overlaid into its transaction block where possible. Simplify &amp; export downloads all saved transactions as a clean Excel-compatible CSV.</p>
           </div>
           <div class="sheet-heading-actions">
             <span id="sheetDimensions" class="badge sheet-badge">—</span>
@@ -132,8 +171,8 @@
     </main>
 
     <footer class="entrance entrance-8">
-      <span id="footerMeta">No statement loaded in this tab session.</span>
-      <button id="clearStatementBtn" class="link-button">Clear current statement</button>
+      <span id="footerMeta">Loading your finance data…</span>
+      <span>Synced to your account</span>
     </footer>
   </div>
 
@@ -152,8 +191,44 @@
         <label>Amount (SGD) <input id="newAmount" type="number" min="0.01" step="0.01" required /></label>
       </div>
       <label>Category <select id="newCategory"></select></label>
-      <p class="muted small dialog-note">Manual entries update dashboard totals and are appended to the spreadsheet preview. Source-only columns remain blank where that information is unavailable.</p>
-      <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog>Cancel</button><button class="button primary" value="default">Add</button></div>
+      <p class="muted small dialog-note">Manual entries are saved directly to your account and remain available the next time you log in.</p>
+      <p id="transactionError" class="error" hidden></p>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog>Cancel</button><button class="button primary" type="submit">Add</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="goalDialog">
+    <form id="goalForm" method="dialog" class="dialog-card">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">Saving goal</p><h2>Create a goal</h2></div>
+        <button type="button" class="icon-button" data-close-dialog aria-label="Close">×</button>
+      </div>
+      <label>Goal name <input id="goalName" type="text" maxlength="80" required placeholder="e.g. Used car, PS5, Japan trip" /></label>
+      <div class="form-grid">
+        <label>Category <select id="goalCategory"></select></label>
+        <label>Target amount <input id="goalTargetAmount" type="number" min="0.01" step="0.01" required /></label>
+      </div>
+      <div class="form-grid">
+        <label>Already saved <input id="goalCurrentAmount" type="number" min="0" step="0.01" value="0" /></label>
+        <label>Target date <input id="goalTargetDate" type="date" /></label>
+      </div>
+      <label>Notes <input id="goalNotes" type="text" maxlength="160" placeholder="Optional" /></label>
+      <p id="goalError" class="error" hidden></p>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog>Cancel</button><button class="button primary" type="submit">Create goal</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="goalProgressDialog">
+    <form id="goalProgressForm" method="dialog" class="dialog-card">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">Goal progress</p><h2 id="goalProgressTitle">Update saved amount</h2></div>
+        <button type="button" class="icon-button" data-close-dialog aria-label="Close">×</button>
+      </div>
+      <input id="goalProgressId" type="hidden" />
+      <label>Total saved so far <input id="goalProgressAmount" type="number" min="0" step="0.01" required /></label>
+      <p class="muted small">Enter the total amount currently assigned to this goal.</p>
+      <p id="goalProgressError" class="error" hidden></p>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog>Cancel</button><button class="button primary" type="submit">Save progress</button></div>
     </form>
   </dialog>
 
@@ -163,7 +238,6 @@
         <div><p class="eyebrow">Budget settings</p><h2>Build your paycheck allocation</h2></div>
         <button type="button" class="icon-button" data-close-dialog aria-label="Close">×</button>
       </div>
-
       <section class="preset-section" aria-labelledby="presetHeading">
         <div class="preset-heading">
           <div>
@@ -173,7 +247,6 @@
         </div>
         <div id="presetGrid" class="preset-grid"></div>
       </section>
-
       <div class="allocation-editor-heading">
         <div>
           <h3>Your categories</h3>
@@ -187,10 +260,13 @@
         <strong id="allocationTotal">0%</strong>
       </div>
       <p id="splitError" class="error" hidden>Allocation percentages must add up to exactly 100%, and every category needs a name.</p>
-      <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog>Cancel</button><button class="button primary" value="default">Save plan</button></div>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog>Cancel</button><button class="button primary" type="submit">Save plan</button></div>
     </form>
   </dialog>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="data.js"></script>
   <script src="parser.js"></script>
   <script src="console.js"></script>
 </body>

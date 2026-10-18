@@ -3,11 +3,24 @@
 
   const SETTINGS_KEY = "financeTracker-flexible-settings-v3";
   const LEGACY_SETTINGS_KEY = "financeTracker502525-settings-v2";
-  const SESSION_KEY = "financeTracker502525-currentStatement-v1";
   const CATEGORY_OPTIONS = [
     "Food & Drinks", "Groceries", "Transport", "Shopping", "Health & Personal",
     "Insurance", "Subscriptions", "Cash", "PayNow / QR", "Other Spending",
     "Reserve Transfer", "Income", "Refund", "Interest", "Other Inflow"
+  ];
+
+  const GOAL_CATEGORIES = [
+    "Emergency Fund",
+    "Vehicle",
+    "Electronics & Gaming",
+    "Travel",
+    "Home & Housing",
+    "Education",
+    "Health & Wellness",
+    "Family & Gifts",
+    "Debt Payoff",
+    "Investing & Retirement",
+    "Other"
   ];
 
   const PRESETS = [
@@ -43,7 +56,7 @@
     {
       id: "classic-50-25-25",
       name: "Classic 50 / 25 / 25",
-      description: "Keeps the tracker’s original split, but now each category can be renamed, removed, or expanded.",
+      description: "Keeps the tracker’s original split, but each category can be renamed, removed, or expanded.",
       categories: [
         { name: "Spending", percent: 50, spendable: true },
         { name: "Savings", percent: 25, spendable: false },
@@ -52,19 +65,7 @@
     }
   ];
 
-  const defaultSettings = { categories: createCategories(PRESETS[3].categories) };
-  let state = {
-    settings: loadSettings(),
-    transactions: [],
-    statement: null,
-    sheetRows: [],
-    maskRules: []
-  };
-  let activePeriod = "all";
-  let draftCategories = [];
-
   const $ = id => document.getElementById(id);
-  const uploadInput = $("statementUpload");
 
   function categoryId() {
     if (globalThis.crypto?.randomUUID) return `allocation-${crypto.randomUUID()}`;
@@ -72,7 +73,7 @@
   }
 
   function createCategories(categories) {
-    return categories.map(category => ({
+    return (categories || []).map(category => ({
       id: category.id || categoryId(),
       name: String(category.name || "").trim(),
       percent: Number(category.percent || 0),
@@ -80,15 +81,32 @@
     }));
   }
 
+  const defaultSettings = { categories: createCategories(PRESETS[3].categories) };
+
+  let state = {
+    user: null,
+    settings: { categories: createCategories(defaultSettings.categories) },
+    transactions: [],
+    statement: null,
+    sheetRows: [],
+    maskRules: [],
+    goals: []
+  };
+  let periodStartMonth = "";
+  let periodEndMonth = "";
+  let draftCategories = [];
+
   function validSettings(settings) {
     if (!Array.isArray(settings?.categories) || !settings.categories.length) return false;
     const total = settings.categories.reduce((sum, category) => sum + Number(category?.percent || 0), 0);
     return Math.abs(total - 100) < 0.001 && settings.categories.every(category =>
-      String(category?.name || "").trim() && Number.isFinite(Number(category?.percent)) && Number(category.percent) >= 0
+      String(category?.name || "").trim() &&
+      Number.isFinite(Number(category?.percent)) &&
+      Number(category.percent) >= 0
     );
   }
 
-  function loadSettings() {
+  function localSettingsFallback() {
     try {
       const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY));
       if (validSettings(stored)) return { categories: createCategories(stored.categories) };
@@ -111,24 +129,24 @@
     return { categories: createCategories(defaultSettings.categories) };
   }
 
-  function saveSettings() {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
-  }
-
   function allocationCategories() {
     return state.settings.categories || [];
   }
 
   function spendablePercent() {
-    return allocationCategories().filter(category => category.spendable).reduce((sum, category) => sum + category.percent, 0);
+    return allocationCategories()
+      .filter(category => category.spendable)
+      .reduce((sum, category) => sum + category.percent, 0);
   }
 
   function reservePercent() {
-    return allocationCategories().filter(category => !category.spendable).reduce((sum, category) => sum + category.percent, 0);
+    return allocationCategories()
+      .filter(category => !category.spendable)
+      .reduce((sum, category) => sum + category.percent, 0);
   }
 
   function currencyCode() {
-    return state.statement?.currencyCode || "SGD";
+    return state.statement?.currencyCode || state.transactions.find(transaction => transaction.currency)?.currency || "SGD";
   }
 
   function money(n) {
@@ -141,36 +159,45 @@
 
   function dateFmt(iso) {
     if (!iso) return "—";
-    return new Intl.DateTimeFormat("en-SG", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${iso}T00:00:00`));
+    return new Intl.DateTimeFormat("en-SG", { day: "numeric", month: "short", year: "numeric" })
+      .format(new Date(`${iso}T00:00:00`));
   }
 
   function monthFmt(ym) {
-    if (!ym || ym === "all") return "All";
-    return new Intl.DateTimeFormat("en-SG", { month: "short", year: "2-digit" }).format(new Date(`${ym}-01T00:00:00`));
+    if (!ym) return "—";
+    return new Intl.DateTimeFormat("en-SG", { month: "short", year: "numeric" })
+      .format(new Date(`${ym}-01T00:00:00`));
   }
 
   function months() {
-    return [...new Set(state.transactions.map(t => t.date.slice(0, 7)))].sort();
+    return [...new Set(state.transactions.map(transaction => transaction.date?.slice(0, 7)).filter(Boolean))].sort();
   }
 
-  function inActivePeriod(t) {
-    return activePeriod === "all" || t.date.startsWith(activePeriod);
+  function inActivePeriod(transaction) {
+    const month = transaction.date?.slice(0, 7) || "";
+    if (!month) return false;
+    if (periodStartMonth && month < periodStartMonth) return false;
+    if (periodEndMonth && month > periodEndMonth) return false;
+    return true;
   }
 
   function periodTransactions() {
     return state.transactions.filter(inActivePeriod);
   }
 
-  function isDebit(t) { return t.amount < 0; }
-  function isCredit(t) { return t.amount > 0; }
-  function isPayroll(t) { return t.category === "Income" || t.isPayroll; }
-  function countsAsSpend(t) { return isDebit(t) && !t.excludeFromSpending; }
-  function isReserve(t) { return isDebit(t) && t.excludeFromSpending; }
+  function isDebit(transaction) { return transaction.amount < 0; }
+  function isCredit(transaction) { return transaction.amount > 0; }
+  function isPayroll(transaction) { return transaction.category === "Income" || transaction.isPayroll; }
+  function countsAsSpend(transaction) { return isDebit(transaction) && !transaction.excludeFromSpending; }
+  function isReserve(transaction) { return isDebit(transaction) && transaction.excludeFromSpending; }
 
   function metrics(list) {
-    const payroll = list.filter(t => isCredit(t) && isPayroll(t)).reduce((sum, t) => sum + t.amount, 0);
-    const spending = list.filter(countsAsSpend).reduce((sum, t) => sum + Math.abs(t.amount), 0);
-    const reserve = list.filter(isReserve).reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    const payroll = list.filter(transaction => isCredit(transaction) && isPayroll(transaction))
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    const spending = list.filter(countsAsSpend)
+      .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
+    const reserve = list.filter(isReserve)
+      .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
     const spendTarget = payroll * spendablePercent() / 100;
     const reserveTarget = payroll * reservePercent() / 100;
     const targets = allocationCategories().map(category => ({
@@ -180,11 +207,34 @@
     return { payroll, spending, reserve, spendTarget, reserveTarget, targets, remaining: spendTarget - spending };
   }
 
-  function renderPeriodOptions() {
+  function initializePeriodRange() {
     const allMonths = months();
-    const current = activePeriod;
-    $("periodSelect").innerHTML = `<option value="all">All statement data</option>` + allMonths.slice().reverse().map(month => `<option value="${month}">${monthFmt(month)}</option>`).join("");
-    $("periodSelect").value = allMonths.includes(current) || current === "all" ? current : "all";
+    if (!allMonths.length) {
+      periodStartMonth = "";
+      periodEndMonth = "";
+      return;
+    }
+    periodEndMonth = allMonths[allMonths.length - 1];
+    periodStartMonth = allMonths[Math.max(0, allMonths.length - 3)];
+  }
+
+  function renderPeriodControls() {
+    const allMonths = months();
+    const min = allMonths[0] || "";
+    const max = allMonths[allMonths.length - 1] || "";
+    const from = $("periodFrom");
+    const to = $("periodTo");
+    from.min = min;
+    from.max = max;
+    to.min = min;
+    to.max = max;
+    from.value = periodStartMonth;
+    to.value = periodEndMonth;
+
+    const summary = $("periodSummary");
+    if (!periodStartMonth && !periodEndMonth) summary.textContent = "No data";
+    else if (periodStartMonth === periodEndMonth) summary.textContent = monthFmt(periodStartMonth);
+    else summary.textContent = `${monthFmt(periodStartMonth)} – ${monthFmt(periodEndMonth)}`;
   }
 
   function renderStatementMeta() {
@@ -194,21 +244,14 @@
     const st = state.statement || {};
     const balances = adjustedStatementBalances();
 
-    $("rangeMeta").textContent = first && last ? `${dateFmt(first)} – ${dateFmt(last)}` : "—";
-
-    $("availableMeta").textContent = balances.availableBalance != null
-      ? money(balances.availableBalance)
-      : "—";
-
+    $("rangeMeta").textContent = first && last ? `${dateFmt(first)} – ${dateFmt(last)}` : "No transactions yet";
+    $("availableMeta").textContent = balances.availableBalance != null ? money(balances.availableBalance) : "—";
     $("statementDateMeta").textContent = dateFmt(st.statementDate);
-
-    $("snapshotBalance").textContent = balances.availableBalance != null
-      ? money(balances.availableBalance)
-      : "—";
-    $("snapshotDate").textContent = st.statementDate ? `as at ${dateFmt(st.statementDate)}` : "No statement date found";
+    $("snapshotBalance").textContent = balances.availableBalance != null ? money(balances.availableBalance) : "—";
+    $("snapshotDate").textContent = st.statementDate ? `as at ${dateFmt(st.statementDate)}` : "No statement imported yet";
     $("footerMeta").textContent = first && last
-      ? `Imported statement range: ${dateFmt(first)} – ${dateFmt(last)}. Source rows and transactions stay only in this tab session.`
-      : "No statement loaded in this tab session.";
+      ? `Saved finance history: ${dateFmt(first)} – ${dateFmt(last)} · ${txs.length} transactions`
+      : "No transactions saved yet.";
   }
 
   function renderKpis() {
@@ -258,21 +301,25 @@
 
     const message = $("budgetMessage");
     message.classList.toggle("over", m.remaining < 0);
-    if (spendablePercent() === 0) {
-      message.textContent = "No allocation categories are marked as spendable. Edit the plan and mark one or more categories as spendable to track an allowance.";
+    if (!state.transactions.length) {
+      message.textContent = "Import a statement to establish your finance history, then keep it updated with manual transactions.";
+    } else if (spendablePercent() === 0) {
+      message.textContent = "No allocation categories are marked as spendable. Edit the plan and mark one or more categories as spendable.";
     } else if (m.payroll === 0 && m.spending > 0) {
-      message.textContent = "There is spending in this month but no payroll credit in the same month. Use the all-data view for a rolling picture, or manually add income if it was paid elsewhere.";
+      message.textContent = "There is spending in the selected range but no detected payroll credit. Expand the date range or add missing income manually.";
     } else if (m.remaining < 0) {
-      message.textContent = `Spending is ${money(Math.abs(m.remaining))} above the selected period's combined spendable allocation.`;
+      message.textContent = `Spending is ${money(Math.abs(m.remaining))} above the selected range's combined spendable allocation.`;
     } else {
-      message.textContent = `${money(m.remaining)} remains from the selected period's combined spendable allocation.`;
+      message.textContent = `${money(m.remaining)} remains from the selected range's combined spendable allocation.`;
     }
   }
 
   function renderMonthlyChart() {
-    const allMonths = months();
-    const data = allMonths.map(month => {
-      const list = state.transactions.filter(t => t.date.startsWith(month));
+    const visibleMonths = months().filter(month =>
+      (!periodStartMonth || month >= periodStartMonth) && (!periodEndMonth || month <= periodEndMonth)
+    );
+    const data = visibleMonths.map(month => {
+      const list = state.transactions.filter(transaction => transaction.date.startsWith(month));
       const m = metrics(list);
       return { month, allowance: m.spendTarget, spending: m.spending };
     });
@@ -288,7 +335,8 @@
         </div>
         <div class="month-label">${monthFmt(item.month)}</div>
       </div>`;
-    }).join("") + `<div class="chart-legend" style="grid-column:1/-1"><span><i class="legend-dot allowance-dot"></i>Spendable allowance</span><span><i class="legend-dot spending-dot"></i>Spending</span></div>` : `<div class="empty">Upload a statement to see monthly trends.</div>`;
+    }).join("") + `<div class="chart-legend" style="grid-column:1/-1"><span><i class="legend-dot allowance-dot"></i>Spendable allowance</span><span><i class="legend-dot spending-dot"></i>Spending</span></div>`
+      : `<div class="empty">No transactions in this date range.</div>`;
   }
 
   function payrollSource(description) {
@@ -297,19 +345,68 @@
 
   function renderPaychecks() {
     const categories = allocationCategories();
-    const paychecks = periodTransactions().filter(t => isCredit(t) && isPayroll(t)).sort((a, b) => b.date.localeCompare(a.date));
+    const paychecks = periodTransactions()
+      .filter(transaction => isCredit(transaction) && isPayroll(transaction))
+      .sort((a, b) => b.date.localeCompare(a.date));
     $("paycheckCount").textContent = `${paychecks.length} paycheck${paychecks.length === 1 ? "" : "s"}`;
     $("paycheckTable").style.minWidth = `${Math.max(780, 390 + categories.length * 135)}px`;
-    $("paycheckHeader").innerHTML = `<th>Date</th><th>Payroll source</th><th>Gross</th>` + categories.map(category => `<th>${escapeHtml(category.name)}</th>`).join("");
-    $("paycheckRows").innerHTML = paychecks.length ? paychecks.map(t => `<tr>
-      <td>${dateFmt(t.date)}</td><td>${escapeHtml(payrollSource(t.description))}</td><td class="amount positive">${money(t.amount)}</td>
-      ${categories.map(category => `<td>${money(t.amount * category.percent / 100)}</td>`).join("")}
-    </tr>`).join("") : `<tr><td colspan="${3 + categories.length}" class="empty">No payroll credits detected in this period.</td></tr>`;
+    $("paycheckHeader").innerHTML = `<th>Date</th><th>Payroll source</th><th>Gross</th>` +
+      categories.map(category => `<th>${escapeHtml(category.name)}</th>`).join("");
+    $("paycheckRows").innerHTML = paychecks.length ? paychecks.map(transaction => `<tr>
+      <td>${dateFmt(transaction.date)}</td>
+      <td>${escapeHtml(payrollSource(transaction.description))}</td>
+      <td class="amount positive">${money(transaction.amount)}</td>
+      ${categories.map(category => `<td>${money(transaction.amount * category.percent / 100)}</td>`).join("")}
+    </tr>`).join("") : `<tr><td colspan="${3 + categories.length}" class="empty">No payroll credits detected in this range.</td></tr>`;
   }
 
   function renderManualCategoryOptions() {
-    const used = [...new Set([...CATEGORY_OPTIONS, ...state.transactions.map(t => t.category)])].sort();
+    const used = [...new Set([...CATEGORY_OPTIONS, ...state.transactions.map(transaction => transaction.category)])].sort();
     $("newCategory").innerHTML = used.map(category => `<option value="${escapeAttr(category)}">${escapeHtml(category)}</option>`).join("");
+  }
+
+  function renderGoalCategoryOptions() {
+    $("goalCategory").innerHTML = GOAL_CATEGORIES.map(category =>
+      `<option value="${escapeAttr(category)}">${escapeHtml(category)}</option>`
+    ).join("");
+  }
+
+  function goalStatus(goal) {
+    if (goal.currentAmount >= goal.targetAmount) return "complete";
+    return goal.status || "active";
+  }
+
+  function renderGoals() {
+    const grid = $("goalGrid");
+    if (!state.goals.length) {
+      grid.innerHTML = `<div class="goal-empty"><strong>No saving goals yet.</strong><span>Create a goal for an emergency fund, car, PS5, trip, home deposit, or anything else you are working toward.</span></div>`;
+      return;
+    }
+
+    grid.innerHTML = state.goals.map((goal, index) => {
+      const rawProgress = goal.targetAmount > 0 ? goal.currentAmount / goal.targetAmount * 100 : 0;
+      const progress = Math.min(100, Math.max(0, rawProgress));
+      const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
+      const complete = goalStatus(goal) === "complete";
+      return `<article class="goal-card ${complete ? "goal-complete" : ""}" style="animation-delay:${index * 50}ms">
+        <div class="goal-card-top">
+          <span class="goal-category">${escapeHtml(goal.category)}</span>
+          <span class="goal-percent">${Math.round(progress)}%</span>
+        </div>
+        <h3>${escapeHtml(goal.name)}</h3>
+        <div class="goal-progress"><div style="width:${progress}%"></div></div>
+        <div class="goal-money"><strong>${money(goal.currentAmount)}</strong><span>of ${money(goal.targetAmount)}</span></div>
+        <div class="goal-meta">
+          <span>${complete ? "Goal reached" : `${money(remaining)} remaining`}</span>
+          <span>${goal.targetDate ? `Target ${dateFmt(goal.targetDate)}` : "No target date"}</span>
+        </div>
+        ${goal.notes ? `<p class="goal-notes">${escapeHtml(goal.notes)}</p>` : ""}
+        <div class="goal-actions">
+          <button class="button ghost compact-button" type="button" data-goal-progress="${escapeAttr(goal.id)}">Update progress</button>
+          <button class="link-button goal-delete" type="button" data-goal-delete="${escapeAttr(goal.id)}">Delete</button>
+        </div>
+      </article>`;
+    }).join("");
   }
 
   function normalizeSheetHeader(value) {
@@ -330,29 +427,26 @@
   function sheetHeaderIndex(rows) {
     return rows.findIndex(row => {
       const values = (row || []).map(normalizeSheetHeader);
-      return values.includes("transactiondate") && values.includes("description") && (values.includes("debitamount") || values.includes("creditamount"));
+      return values.includes("transactiondate") && values.includes("description") &&
+        (values.includes("debitamount") || values.includes("creditamount"));
     });
   }
 
   function manualTransactions() {
-    return state.transactions.filter(transaction => String(transaction.id || "").startsWith("manual-"));
+    return state.transactions.filter(transaction => transaction.sourceKind === "manual");
   }
-  
+
   function manualBalanceAdjustment() {
-    return manualTransactions().reduce((total, transaction) => {
-      return total + Number(transaction.amount || 0);
-    }, 0);
+    return manualTransactions().reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
   }
 
   function adjustedStatementBalances() {
     const statement = state.statement || {};
     const adjustment = manualBalanceAdjustment();
-
     return {
       availableBalance: statement.availableBalance != null
         ? Math.round((Number(statement.availableBalance) + adjustment) * 100) / 100
         : null,
-
       ledgerBalance: statement.ledgerBalance != null
         ? Math.round((Number(statement.ledgerBalance) + adjustment) * 100) / 100
         : null
@@ -382,32 +476,23 @@
     const type = transaction.amount > 0 ? "Income" : transaction.excludeFromSpending ? "Reserve transfer" : "Expense";
     put(type, "Type", "Transaction Type");
     put(countsAsSpend(transaction) ? "Yes" : "No", "Counts as Spend", "Counts as Spending");
-
-    if (transaction.amount < 0) {
-      put(Math.abs(transaction.amount), "Debit Amount", "Debit");
-    } else if (transaction.amount > 0) {
-      put(transaction.amount, "Credit Amount", "Credit");
-    }
-
+    if (transaction.amount < 0) put(Math.abs(transaction.amount), "Debit Amount", "Debit");
+    else if (transaction.amount > 0) put(transaction.amount, "Credit Amount", "Credit");
     return row;
   }
 
   function sheetRowsWithManualEntries() {
-    const sourceRows = Array.isArray(state.sheetRows) ? state.sheetRows.map(row => Array.isArray(row) ? row.slice() : []) : [];
+    const sourceRows = Array.isArray(state.sheetRows)
+      ? state.sheetRows.map(row => Array.isArray(row) ? row.slice() : [])
+      : [];
     if (!sourceRows.length) return { rows: [], manualRowIndexes: new Set(), manualCount: 0 };
-      const balances = adjustedStatementBalances();
 
-      sourceRows.forEach(row => {
-        const label = String(row?.[0] ?? "").trim().toLowerCase();
-
-        if (label.startsWith("available balance") && balances.availableBalance != null) {
-          row[1] = balances.availableBalance;
-        }
-
-        if (label.startsWith("ledger balance") && balances.ledgerBalance != null) {
-          row[1] = balances.ledgerBalance;
-        }
-      });
+    const balances = adjustedStatementBalances();
+    sourceRows.forEach(row => {
+      const label = String(row?.[0] ?? "").trim().toLowerCase();
+      if (label.startsWith("available balance") && balances.availableBalance != null) row[1] = balances.availableBalance;
+      if (label.startsWith("ledger balance") && balances.ledgerBalance != null) row[1] = balances.ledgerBalance;
+    });
 
     while (sourceRows.length && !sourceRows[sourceRows.length - 1].some(value => value != null && String(value).trim() !== "")) {
       sourceRows.pop();
@@ -420,20 +505,12 @@
     const maxColumns = Math.max(1, ...sourceRows.map(row => row.length), headerRow.length);
     const dateColumn = sheetColumnIndex(headerRow, "Transaction Date", "Date");
     const manuals = manualTransactions();
-    if (!manuals.length || dateColumn < 0) {
-      return { rows: sourceRows, manualRowIndexes: new Set(), manualCount: 0 };
-    }
+    if (!manuals.length || dateColumn < 0) return { rows: sourceRows, manualRowIndexes: new Set(), manualCount: 0 };
 
     const parser = window.FinanceStatementParser;
     const parseRowDate = row => parser?.parseDateCell ? parser.parseDateCell(row?.[dateColumn]) : null;
-
-    // The uploaded statement is displayed newest-first. Identify its contiguous
-    // transaction block, merge manual rows into that block, and sort by date
-    // descending so a newly added latest transaction appears at the top.
     let transactionEnd = headerIndex + 1;
-    while (transactionEnd < sourceRows.length && parseRowDate(sourceRows[transactionEnd])) {
-      transactionEnd++;
-    }
+    while (transactionEnd < sourceRows.length && parseRowDate(sourceRows[transactionEnd])) transactionEnd++;
 
     const importedEntries = sourceRows.slice(headerIndex + 1, transactionEnd).map((row, index) => ({
       row,
@@ -447,7 +524,6 @@
       manual: true,
       order: index
     }));
-
     const mergedEntries = [...importedEntries, ...manualEntries].sort((a, b) => {
       const byDate = b.date.localeCompare(a.date);
       if (byDate) return byDate;
@@ -464,7 +540,6 @@
     mergedEntries.forEach((entry, index) => {
       if (entry.manual) manualRowIndexes.add(headerIndex + 1 + index);
     });
-
     return { rows, manualRowIndexes, manualCount: manuals.length };
   }
 
@@ -487,8 +562,8 @@
   function renderSheet() {
     const { rows, manualRowIndexes, manualCount } = sheetRowsWithManualEntries();
     if (!rows.length) {
-      $("sheetDimensions").textContent = "Preview unavailable";
-      $("sheetTable").innerHTML = `<tbody><tr><td class="sheet-empty">Re-upload the statement once to populate the source spreadsheet preview. Older tab sessions created before this viewer was added do not contain the original worksheet rows.</td></tr></tbody>`;
+      $("sheetDimensions").textContent = "No source sheet";
+      $("sheetTable").innerHTML = `<tbody><tr><td class="sheet-empty">Import a statement to populate the source spreadsheet preview. Your dashboard can continue to use manually added transactions even without a workbook.</td></tr></tbody>`;
       return;
     }
 
@@ -509,12 +584,11 @@
       const rowClasses = [rowIndex === headerIndex ? "sheet-source-header" : "", isManual ? "sheet-manual-row" : ""].filter(Boolean).join(" ");
       return `<tr class="${rowClasses}"><th scope="row" class="sheet-row-number"${isManual ? ` title="Manual entry"` : ""}>${rowIndex + 1}</th>${cells}</tr>`;
     }).join("");
-
     $("sheetTable").innerHTML = `<thead><tr><th class="sheet-corner" aria-label="Row and column headings"></th>${columnHeaders}</tr></thead><tbody>${body}</tbody>`;
   }
 
   function simplifiedTransactionRows() {
-    return state.transactions.map(transaction => {
+    return state.transactions.slice().sort((a, b) => b.date.localeCompare(a.date)).map(transaction => {
       const type = transaction.amount > 0 ? "Income" : transaction.excludeFromSpending ? "Reserve transfer" : "Expense";
       return [
         transaction.date || "",
@@ -524,7 +598,7 @@
         Number(transaction.amount || 0),
         transaction.currency || currencyCode(),
         countsAsSpend(transaction) ? "Yes" : "No",
-        String(transaction.id || "").startsWith("manual-") ? "Manual" : "Imported"
+        transaction.sourceKind === "manual" ? "Manual" : "Imported"
       ];
     });
   }
@@ -543,10 +617,8 @@
     const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const sourceName = String(state.statement?.fileName || "finance-transactions").replace(/\.[^.]+$/, "");
-    const safeName = sourceName.replace(/[\\/:*?"<>|]+/g, "-").trim() || "finance-transactions";
     link.href = url;
-    link.download = `${safeName}-simplified.csv`;
+    link.download = "finance-transactions-simplified.csv";
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -563,13 +635,15 @@
   }
 
   function renderAll() {
-    renderPeriodOptions();
+    renderPeriodControls();
     renderStatementMeta();
     renderKpis();
     renderAllocation();
+    renderGoals();
     renderMonthlyChart();
     renderPaychecks();
     renderManualCategoryOptions();
+    renderGoalCategoryOptions();
     renderSheet();
   }
 
@@ -577,63 +651,24 @@
     return String(value).replace(/[&<>'"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[ch]));
   }
 
-  function escapeAttr(value) {
-    return escapeHtml(value);
+  function escapeAttr(value) { return escapeHtml(value); }
+
+  function displayNameForUser(user) {
+    const metadataName = String(user?.user_metadata?.username || user?.user_metadata?.display_name || "").trim();
+    if (metadataName) return metadataName;
+    const emailPrefix = String(user?.email || "").split("@")[0].trim();
+    return emailPrefix || "User";
+  }
+
+  function userInitial(name) {
+    const first = String(name || "User").trim().charAt(0);
+    return first ? first.toUpperCase() : "U";
   }
 
   function formatPercent(value, includeSymbol = true) {
     const n = Number(value || 0);
     const text = Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, "");
     return includeSymbol ? `${text}%` : text;
-  }
-
-  function persistCurrentSession() {
-    if (!state.transactions.length) return;
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({
-      statement: state.statement,
-      transactions: state.transactions,
-      sheetRows: state.sheetRows || [],
-      maskRules: state.maskRules || []
-    }));
-  }
-
-  function loadImportedStatement() {
-    try {
-      const imported = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null");
-      if (!imported?.transactions?.length) throw new Error("No uploaded statement found.");
-      state.transactions = imported.transactions;
-      state.statement = imported.statement || null;
-      state.sheetRows = imported.sheetRows || [];
-      state.maskRules = imported.maskRules || [];
-      activePeriod = months().slice(-1)[0] || "all";
-      renderAll();
-      requestAnimationFrame(() => document.documentElement.classList.add("app-ready"));
-    } catch (_) {
-      window.location.replace("index.html");
-    }
-  }
-
-  async function handleReplacementFile(file) {
-    if (!file) return;
-    try {
-      const { readStatementRows, importStatementFromRows } = window.FinanceStatementParser;
-      const rows = await readStatementRows(file);
-      const imported = importStatementFromRows(rows, file.name, state.maskRules || []);
-      if (!imported.transactions.length) throw new Error("No transactions were found.");
-      imported.maskRules = state.maskRules || [];
-      state.transactions = imported.transactions;
-      state.statement = imported.statement || null;
-      state.sheetRows = imported.sheetRows || [];
-      activePeriod = months().slice(-1)[0] || "all";
-      persistCurrentSession();
-      renderAll();
-      flashRefresh();
-    } catch (error) {
-      console.error(error);
-      alert(error?.message || "Could not read this file. Try exporting the statement as CSV.");
-    } finally {
-      uploadInput.value = "";
-    }
   }
 
   function flashRefresh() {
@@ -701,53 +736,209 @@
     $("settingsDialog").showModal();
   }
 
-  uploadInput.addEventListener("change", event => handleReplacementFile(event.target.files?.[0]));
-  $("uploadAnotherBtn").addEventListener("click", () => { window.location.href = "index.html"; });
-  $("clearStatementBtn").addEventListener("click", () => {
-    sessionStorage.removeItem(SESSION_KEY);
-    window.location.href = "index.html";
-  });
-  $("periodSelect").addEventListener("change", event => {
-    activePeriod = event.target.value;
+  function setInlineError(id, message) {
+    const el = $(id);
+    el.textContent = message || "";
+    el.hidden = !message;
+  }
+
+  async function bootstrap() {
+    try {
+      const loaded = await window.FinanceData.loadDashboardData();
+      state.user = loaded.user;
+      state.transactions = loaded.transactions;
+      state.statement = loaded.statement;
+      state.sheetRows = loaded.sheetRows;
+      state.maskRules = loaded.maskRules;
+      state.goals = loaded.goals;
+      const accountName = displayNameForUser(state.user);
+      $("userName").textContent = accountName;
+      $("userNameChip").textContent = accountName;
+      $("userAvatar").textContent = userInitial(accountName);
+
+      if (loaded.settings && validSettings(loaded.settings)) {
+        state.settings = { categories: createCategories(loaded.settings.categories) };
+      } else {
+        state.settings = localSettingsFallback();
+        await window.FinanceData.saveSettings(state.settings.categories);
+      }
+
+      if (!state.transactions.length && !state.statement) {
+        location.replace("index.html");
+        return;
+      }
+
+      initializePeriodRange();
+      renderAll();
+      requestAnimationFrame(() => document.documentElement.classList.add("app-ready"));
+    } catch (error) {
+      console.error(error);
+      $("footerMeta").textContent = error?.message || "Could not load account data.";
+      $("budgetMessage").textContent = "Could not load your finance data. Check Supabase configuration and database policies.";
+      $("budgetMessage").classList.add("over");
+    }
+  }
+
+  $("periodFrom").addEventListener("change", event => {
+    periodStartMonth = event.target.value;
+    if (periodEndMonth && periodStartMonth > periodEndMonth) periodEndMonth = periodStartMonth;
     renderAll();
     flashRefresh();
   });
 
+  $("periodTo").addEventListener("change", event => {
+    periodEndMonth = event.target.value;
+    if (periodStartMonth && periodEndMonth < periodStartMonth) periodStartMonth = periodEndMonth;
+    renderAll();
+    flashRefresh();
+  });
+
+  $("periodAllBtn").addEventListener("click", () => {
+    const allMonths = months();
+    periodStartMonth = allMonths[0] || "";
+    periodEndMonth = allMonths[allMonths.length - 1] || "";
+    renderAll();
+    flashRefresh();
+  });
+
+  $("importStatementBtn").addEventListener("click", () => { location.href = "index.html?import=1"; });
+  $("signOutBtn").addEventListener("click", () => window.FinanceData.signOut());
   $("simplifyExportBtn").addEventListener("click", exportSimplifiedTransactions);
 
-  const txDialog = $("transactionDialog");
+  const transactionDialog = $("transactionDialog");
   $("addTransactionBtn").addEventListener("click", () => {
     $("newDate").value = new Date().toISOString().slice(0, 10);
     $("newType").value = "expense";
     $("newCategory").value = "Other Spending";
-    txDialog.showModal();
+    setInlineError("transactionError", "");
+    transactionDialog.showModal();
   });
+
   $("newType").addEventListener("change", event => {
     const type = event.target.value;
     $("newCategory").value = type === "income" ? "Income" : type === "reserve" ? "Reserve Transfer" : "Other Spending";
   });
-  $("transactionForm").addEventListener("submit", event => {
+
+  $("transactionForm").addEventListener("submit", async event => {
     event.preventDefault();
-    const type = $("newType").value;
-    const raw = Number($("newAmount").value);
-    const amount = type === "income" ? raw : -raw;
-    state.transactions.push({
-      id: `manual-${Date.now()}`,
-      date: $("newDate").value,
-      description: $("newDescription").value.trim(),
-      amount,
-      category: $("newCategory").value,
-      excludeFromSpending: type === "reserve",
-      isPayroll: type === "income" && $("newCategory").value === "Income",
-      sourceCode: "MANUAL",
-      currency: currencyCode()
-    });
-    state.transactions.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-    txDialog.close();
-    $("transactionForm").reset();
-    persistCurrentSession();
-    renderAll();
-    flashRefresh();
+    const submit = event.submitter;
+    submit.disabled = true;
+    setInlineError("transactionError", "");
+    try {
+      const type = $("newType").value;
+      const raw = Number($("newAmount").value);
+      const amount = type === "income" ? raw : -raw;
+      const saved = await window.FinanceData.addManualTransaction({
+        date: $("newDate").value,
+        description: $("newDescription").value.trim(),
+        amount,
+        category: $("newCategory").value,
+        excludeFromSpending: type === "reserve",
+        isPayroll: type === "income" && $("newCategory").value === "Income",
+        currency: currencyCode()
+      });
+      state.transactions.push(saved);
+      state.transactions.sort((a, b) => a.date.localeCompare(b.date) || String(a.id).localeCompare(String(b.id)));
+      const newMonth = saved.date.slice(0, 7);
+      if (!periodEndMonth || newMonth > periodEndMonth) periodEndMonth = newMonth;
+      if (!periodStartMonth) periodStartMonth = newMonth;
+      transactionDialog.close();
+      $("transactionForm").reset();
+      renderAll();
+      flashRefresh();
+    } catch (error) {
+      setInlineError("transactionError", error?.message || "Could not save transaction.");
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  const goalDialog = $("goalDialog");
+  $("addGoalBtn").addEventListener("click", () => {
+    $("goalForm").reset();
+    $("goalCurrentAmount").value = "0";
+    renderGoalCategoryOptions();
+    setInlineError("goalError", "");
+    goalDialog.showModal();
+  });
+
+  $("goalForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const submit = event.submitter;
+    submit.disabled = true;
+    setInlineError("goalError", "");
+    try {
+      const targetAmount = Number($("goalTargetAmount").value);
+      const currentAmount = Number($("goalCurrentAmount").value || 0);
+      if (currentAmount > targetAmount) throw new Error("Already saved cannot be greater than the target amount when creating a goal.");
+      const goal = await window.FinanceData.createGoal({
+        name: $("goalName").value.trim(),
+        category: $("goalCategory").value,
+        targetAmount,
+        currentAmount,
+        targetDate: $("goalTargetDate").value || null,
+        notes: $("goalNotes").value.trim()
+      });
+      state.goals.push(goal);
+      goalDialog.close();
+      renderGoals();
+      flashRefresh();
+    } catch (error) {
+      setInlineError("goalError", error?.message || "Could not create goal.");
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  const goalProgressDialog = $("goalProgressDialog");
+  $("goalGrid").addEventListener("click", async event => {
+    const progressButton = event.target.closest("[data-goal-progress]");
+    const deleteButton = event.target.closest("[data-goal-delete]");
+
+    if (progressButton) {
+      const goal = state.goals.find(item => item.id === progressButton.dataset.goalProgress);
+      if (!goal) return;
+      $("goalProgressId").value = goal.id;
+      $("goalProgressTitle").textContent = `Update ${goal.name}`;
+      $("goalProgressAmount").value = goal.currentAmount;
+      setInlineError("goalProgressError", "");
+      goalProgressDialog.showModal();
+      return;
+    }
+
+    if (deleteButton) {
+      const goal = state.goals.find(item => item.id === deleteButton.dataset.goalDelete);
+      if (!goal) return;
+      if (!confirm(`Delete the saving goal “${goal.name}”?`)) return;
+      try {
+        await window.FinanceData.deleteGoal(goal.id);
+        state.goals = state.goals.filter(item => item.id !== goal.id);
+        renderGoals();
+      } catch (error) {
+        alert(error?.message || "Could not delete goal.");
+      }
+    }
+  });
+
+  $("goalProgressForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const submit = event.submitter;
+    submit.disabled = true;
+    setInlineError("goalProgressError", "");
+    try {
+      const id = $("goalProgressId").value;
+      const currentAmount = Number($("goalProgressAmount").value);
+      const updated = await window.FinanceData.setGoalProgress(id, currentAmount);
+      const index = state.goals.findIndex(goal => goal.id === id);
+      if (index >= 0) state.goals[index] = updated;
+      goalProgressDialog.close();
+      renderGoals();
+      flashRefresh();
+    } catch (error) {
+      setInlineError("goalProgressError", error?.message || "Could not update goal.");
+    } finally {
+      submit.disabled = false;
+    }
   });
 
   $("settingsBtn").addEventListener("click", openSettingsDialog);
@@ -759,12 +950,14 @@
     draftCategories = createCategories(preset.categories);
     renderAllocationEditor();
   });
+
   $("addAllocationBtn").addEventListener("click", () => {
     syncDraftFromEditor();
     draftCategories.push({ id: categoryId(), name: "New category", percent: 0, spendable: false });
     renderAllocationEditor();
     $("allocationEditor").querySelector(".allocation-editor-row:last-child .allocation-name")?.select();
   });
+
   $("allocationEditor").addEventListener("input", updateAllocationTotal);
   $("allocationEditor").addEventListener("change", updateAllocationTotal);
   $("allocationEditor").addEventListener("click", event => {
@@ -776,23 +969,38 @@
     if (!draftCategories.length) draftCategories.push({ id: categoryId(), name: "Spending", percent: 100, spendable: true });
     renderAllocationEditor();
   });
-  $("settingsForm").addEventListener("submit", event => {
+
+  $("settingsForm").addEventListener("submit", async event => {
     event.preventDefault();
     syncDraftFromEditor();
     const total = draftCategories.reduce((sum, category) => sum + Number(category.percent || 0), 0);
-    const invalid = !draftCategories.length || Math.abs(total - 100) > 0.001 || draftCategories.some(category => !category.name || !Number.isFinite(category.percent) || category.percent < 0 || category.percent > 100);
+    const invalid = !draftCategories.length || Math.abs(total - 100) > 0.001 ||
+      draftCategories.some(category => !category.name || !Number.isFinite(category.percent) || category.percent < 0 || category.percent > 100);
     if (invalid) {
       $("splitError").hidden = false;
       return;
     }
-    state.settings = { categories: createCategories(draftCategories) };
-    saveSettings();
-    $("settingsDialog").close();
-    renderAll();
-    flashRefresh();
+
+    const submit = event.submitter;
+    submit.disabled = true;
+    try {
+      const categories = createCategories(draftCategories);
+      await window.FinanceData.saveSettings(categories);
+      state.settings = { categories };
+      $("settingsDialog").close();
+      renderAll();
+      flashRefresh();
+    } catch (error) {
+      $("splitError").textContent = error?.message || "Could not save plan.";
+      $("splitError").hidden = false;
+    } finally {
+      submit.disabled = false;
+    }
   });
 
-  document.querySelectorAll("[data-close-dialog]").forEach(button => button.addEventListener("click", () => button.closest("dialog").close()));
+  document.querySelectorAll("[data-close-dialog]").forEach(button =>
+    button.addEventListener("click", () => button.closest("dialog").close())
+  );
 
-  loadImportedStatement();
+  bootstrap();
 })();

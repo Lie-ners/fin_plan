@@ -1,69 +1,115 @@
 # Flexible Finance Tracker
 
-A local-first finance dashboard that imports Excel, CSV, or TSV bank statements, masks sensitive account references before import, and keeps the active console session available until the tab/window is closed.
+A GitHub Pages-friendly personal finance dashboard backed by Supabase Auth and Postgres. Users can create accounts, import a bank statement once, keep adding transactions manually, view arbitrary multi-month ranges, maintain flexible paycheck allocations, and track saving goals.
 
-## Current dashboard
+## What changed
 
-- Flexible paycheck allocations: add, remove, rename, and rebalance any number of allocation categories.
-- Allocation categories can be marked **Spendable** so multiple categories can combine into the tracked spending allowance.
-- Built-in starter presets: Balanced 50 / 30 / 20, Pay Yourself First 80 / 20, Savings Focus 60 / 20 / 20, and Classic 50 / 25 / 25.
-- Three compact statement metadata cards: imported period, available balance, and statement date.
-- KPI cards for allowance remaining, payroll received, actual spending, and reserve transfers.
-- Monthly allowance-vs-spending chart.
-- Dynamic paycheck planner whose columns follow the user's allocation categories.
-- Source spreadsheet viewer showing the masked uploaded worksheet in a spreadsheet-style table with row/column headings, sticky headers, wrapped text, and scrolling for large sheets.
-- Manual transactions are appended to the source-sheet preview using the detected statement columns. Date, description, currency, debit/credit, and optional category/type fields are filled when available; bank-only fields remain blank.
-- **Simplify & export** downloads an Excel-compatible CSV with Date, Description, Category, Type, Amount, Currency, Counts as Spend, and Source columns, including both imported and manually entered transactions.
-- Motion and hover feedback across buttons, cards, allocation bars, charts, dialogs, and page entry, with `prefers-reduced-motion` support.
+- Supabase email/password account creation and login with an account username used throughout the UI.
+- Transactions, statements, allocation settings, and saving goals persist to the signed-in user account.
+- The original workbook file stays in the browser; the parser applies masking first, then the parsed masked rows are stored in Supabase.
+- Returning users do not need to upload the same statement again.
+- Manual transactions are saved immediately to Supabase.
+- Month filtering is now a From/To range and can cover several months or the full history.
+- Saving goals support: Emergency Fund, Vehicle, Electronics & Gaming, Travel, Home & Housing, Education, Health & Wellness, Family & Gifts, Debt Payoff, Investing & Retirement, and Other.
+- Goal cards track current amount, target amount, target date, progress, and optional notes.
+- Existing flexible budget presets remain available.
+- The latest imported masked workbook can still be previewed and simplified/exported as CSV.
+
+## Supabase setup
+
+### 1. Create the database tables and policies
+
+Open **Supabase Dashboard -> SQL Editor**, paste the contents of `supabase-schema.sql`, and run it once.
+
+The SQL creates:
+
+- `finance_settings`
+- `statements`
+- `transactions`
+- `saving_goals`
+
+All four tables use Row Level Security so an authenticated user can only access rows whose `user_id` matches their own Supabase Auth user ID.
+
+### 2. Add your public Supabase configuration
+
+Open `supabase-config.js` and replace:
+
+```js
+const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL";
+const SUPABASE_PUBLISHABLE_KEY = "YOUR_SUPABASE_PUBLISHABLE_KEY";
+```
+
+Use your **Project URL** and **Publishable key** from the Supabase Connect/API Keys screen.
+
+Never place a secret key or service-role key in this repository or any browser-side file.
+
+### 3. Configure authentication URLs
+
+For the current GitHub Pages deployment, set the Supabase Auth **Site URL** to:
+
+```text
+https://lie-ners.github.io/fin_plan/
+```
+
+Add this production redirect URL:
+
+```text
+https://lie-ners.github.io/fin_plan/login.html
+```
+
+If you later use a custom domain, update these values in Supabase to match that domain.
+
+### 4. Enable email/password auth
+
+In **Authentication -> Providers**, make sure the Email provider is enabled. If email confirmation is enabled, new users will be asked to confirm their email before signing in.
+
+### 5. Commit and publish
+
+Commit the new/changed files and push to GitHub:
+
+```bash
+git add .
+git commit -m "Add Supabase accounts, saving goals, and persistent finance data"
+git push
+```
+
+GitHub Pages will redeploy the same site URL.
+
+## Main files
+
+- `login.html` — login page.
+- `signup.html` — account creation page.
+- `index.html` — authenticated statement import/onboarding page.
+- `console.html` — authenticated finance dashboard.
+- `supabase-config.js` — public project URL + publishable key.
+- `data.js` — Supabase database/auth data-access helpers.
+- `auth.js` — login and signup behavior.
+- `supabase-schema.sql` — database schema, grants, indexes, and RLS policies.
+- `parser.js` — local Excel/CSV/TSV parser and masking logic.
+- `upload.js` — authenticated import flow.
+- `console.js` — dashboard, date ranges, manual transactions, goals, allocations, workbook preview, and export.
+- `styles.css` — application, auth, goal, spreadsheet, and responsive styles.
+
+## Data model
+
+### Statements
+
+Stores metadata plus the masked source-sheet rows. The latest statement is used for the workbook preview and statement snapshot.
+
+### Transactions
+
+Stores both imported and manually entered transactions. `source_kind` distinguishes `imported` from `manual` rows.
+
+### Finance settings
+
+Stores the user's flexible allocation categories as JSON.
+
+### Saving goals
+
+Stores goal name, category, target amount, saved amount, optional target date, notes, and status.
 
 ## Privacy model
 
-The statement file is read by the browser using local file APIs. Parsed transactions and the masked source worksheet rows are stored in this tab's `sessionStorage` after upload. Refreshing `console.html` keeps the current console session, but statement data is not written to `localStorage`. Closing the tab/window clears the active statement under normal browser behavior.
+This version is no longer local-only. Account data is intentionally persisted in Supabase so users can return later without re-uploading their statement.
 
-The app does not connect to your bank, does not call a server, and does not upload your statement.
-
-Only the user's flexible budget allocation settings are saved long-term in `localStorage`.
-
-## Run it
-
-Open `index.html` directly in a modern browser.
-
-For best `.xlsx` support, use a current Chrome, Edge, or Safari browser. CSV and TSV imports do not need Excel parsing support.
-
-## Supported spreadsheet shape
-
-The importer looks for a transaction table containing headers such as:
-
-- `Transaction Date`
-- `Statement Code`
-- `Description`
-- `Supplementary Code`
-- `Supplementary Code Description`
-- `Client Reference`
-- `Additional Reference`
-- `Currency`
-- `Debit Amount`
-- `Credit Amount`
-
-The importer automatically detects the header row, so the transaction table does not need to start on row 1. The full masked source rows are retained for the spreadsheet viewer.
-
-## Financial assumptions
-
-- Credits with statement code `GR` and descriptions beginning with `PAY` are treated as payroll.
-- Transfers to the censored other bank account are treated as reserve transfers and excluded from spending by default.
-- Interest credits are categorized as interest.
-- PayNow and NETS QR transactions are grouped under `PayNow / QR` unless they are detected as reserve transfers or inflows.
-- Merchant categories are heuristic.
-- Spendable allocation categories are combined into the allowance used for actual-spending comparisons.
-- Non-spendable allocation categories are targets; the statement cannot confirm destination balances after funds leave the uploaded account.
-
-## Files
-
-- `index.html` — upload and masking page.
-- `console.html` — finance dashboard and source spreadsheet viewer.
-- `styles.css` — black/orange responsive design, spreadsheet-viewer styles, and motion effects.
-- `parser.js` — local Excel/CSV/TSV import, masking, transaction categorization, and masked source-row retention.
-- `upload.js` — upload-page behavior and tab-scoped handoff to the console.
-- `console.js` — dashboard rendering, flexible allocation planner, manual entries, spreadsheet viewer, and simplified CSV export.
-
-- Manual spreadsheet rows are merged into the transaction block by date, preserving the newest-to-oldest display order.
+Masking still happens in the browser before parsed source rows are written to Supabase. The raw `.xlsx`, `.csv`, or `.tsv` file is not uploaded by this application.

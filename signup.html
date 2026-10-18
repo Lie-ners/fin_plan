@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Create account | Flexible Finance Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-auth-mode="signup">
+  <main class="auth-view">
+    <section class="auth-card entrance entrance-1" aria-labelledby="authTitle">
+      <div class="auth-brand">
+        <p class="eyebrow">Flexible finance tracker</p>
+        <h1 id="authTitle">Create your account</h1>
+        <p class="subhead">Your account keeps transactions, allocation settings, and saving goals available across sessions and devices.</p>
+      </div>
+
+      <form id="authForm" class="auth-form">
+        <label>Username
+          <input id="displayName" type="text" autocomplete="nickname" maxlength="40" required placeholder="e.g. Linus" />
+        </label>
+        <label>Email
+          <input id="authEmail" type="email" autocomplete="email" required placeholder="you@example.com" />
+        </label>
+        <label>Password
+          <input id="authPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters" />
+        </label>
+        <p id="authMessage" class="auth-message" role="status" hidden></p>
+        <button class="button primary full-width" type="submit">Create account</button>
+      </form>
+
+      <p class="auth-switch">Already have an account? <a href="login.html">Log in</a></p>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="auth.js"></script>
+</body>
+</html>
