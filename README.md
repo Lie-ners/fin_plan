@@ -1,115 +1,145 @@
 # Flexible Finance Tracker
 
-A GitHub Pages-friendly personal finance dashboard backed by Supabase Auth and Postgres. Users can create accounts, import a bank statement once, keep adding transactions manually, view arbitrary multi-month ranges, maintain flexible paycheck allocations, and track saving goals.
+A simple personal finance dashboard for tracking spending, income, budget allocations, and savings goals in one place.
 
-## What changed
+The app is designed for people who want a clearer view of their money without having to reconnect a bank account every time they use it.
 
-- Supabase email/password account creation and login with an account username used throughout the UI.
-- Transactions, statements, allocation settings, and saving goals persist to the signed-in user account.
-- The original workbook file stays in the browser; the parser applies masking first, then the parsed masked rows are stored in Supabase.
-- Returning users do not need to upload the same statement again.
-- Manual transactions are saved immediately to Supabase.
-- Month filtering is now a From/To range and can cover several months or the full history.
-- Saving goals support: Emergency Fund, Vehicle, Electronics & Gaming, Travel, Home & Housing, Education, Health & Wellness, Family & Gifts, Debt Payoff, Investing & Retirement, and Other.
-- Goal cards track current amount, target amount, target date, progress, and optional notes.
-- Existing flexible budget presets remain available.
-- The latest imported masked workbook can still be previewed and simplified/exported as CSV.
+## What you can do
 
-## Supabase setup
+- Create an account and keep your finance data available across sessions.
+- Import a bank statement from `.xlsx`, `.csv`, or `.tsv`.
+- Mask account numbers, names, card fragments, or other sensitive text before imported data is saved.
+- Add transactions manually whenever needed.
+- View your finances across one month, several months, or your full saved history.
+- Track income, spending, reserve transfers, and remaining spending allowance.
+- Build a custom paycheck allocation plan using your own percentages and categories.
+- Use starter budget presets such as 50/30/20 or create your own structure.
+- Create savings goals and track progress over time.
+- Preview your latest imported spreadsheet and export a simplified CSV of your transactions.
 
-### 1. Create the database tables and policies
+## Savings goals
 
-Open **Supabase Dashboard -> SQL Editor**, paste the contents of `supabase-schema.sql`, and run it once.
+Goals are kept separate from everyday transaction categories so you can clearly track what you are working toward.
 
-The SQL creates:
+Available goal categories include:
 
-- `finance_settings`
-- `statements`
-- `transactions`
-- `saving_goals`
+- Emergency Fund
+- Vehicle
+- Electronics & Gaming
+- Travel
+- Home & Housing
+- Education
+- Health & Wellness
+- Family & Gifts
+- Debt Payoff
+- Investing & Retirement
+- Other
 
-All four tables use Row Level Security so an authenticated user can only access rows whose `user_id` matches their own Supabase Auth user ID.
+Examples include saving for a car, a PS5, a holiday, a home deposit, or an emergency fund.
 
-### 2. Add your public Supabase configuration
+## Getting started
 
-Open `supabase-config.js` and replace:
+1. Open the app and create an account.
+2. Sign in with your account.
+3. On your first visit, import a bank statement.
+4. Add any masking rules you want before selecting the file.
+5. Once the statement is imported, the dashboard will save your parsed finance data to your account.
+6. From then on, you can return to the dashboard without uploading the same statement again.
+7. Add manual transactions or import newer statements whenever you want to update your history.
 
-```js
-const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL";
-const SUPABASE_PUBLISHABLE_KEY = "YOUR_SUPABASE_PUBLISHABLE_KEY";
-```
+Live site: https://lie-ners.github.io/fin_plan/
 
-Use your **Project URL** and **Publishable key** from the Supabase Connect/API Keys screen.
+## Dashboard overview
 
-Never place a secret key or service-role key in this repository or any browser-side file.
+### Finance summary
 
-### 3. Configure authentication URLs
+The top of the dashboard shows your selected date range, available balance, latest statement date, spending allowance remaining, payroll received, actual spending, and reserve transfers.
 
-For the current GitHub Pages deployment, set the Supabase Auth **Site URL** to:
+### Date range
 
-```text
-https://lie-ners.github.io/fin_plan/
-```
+Use the **From** and **To** month controls to view a specific period. You can compare several months at once or select **All** to view your entire saved history.
 
-Add this production redirect URL:
+### Paycheck allocation
 
-```text
-https://lie-ners.github.io/fin_plan/login.html
-```
-
-If you later use a custom domain, update these values in Supabase to match that domain.
-
-### 4. Enable email/password auth
-
-In **Authentication -> Providers**, make sure the Email provider is enabled. If email confirmation is enabled, new users will be asked to confirm their email before signing in.
-
-### 5. Commit and publish
-
-Commit the new/changed files and push to GitHub:
-
-```bash
-git add .
-git commit -m "Add Supabase accounts, saving goals, and persistent finance data"
-git push
-```
-
-GitHub Pages will redeploy the same site URL.
-
-## Main files
-
-- `login.html` — login page.
-- `signup.html` — account creation page.
-- `index.html` — authenticated statement import/onboarding page.
-- `console.html` — authenticated finance dashboard.
-- `supabase-config.js` — public project URL + publishable key.
-- `data.js` — Supabase database/auth data-access helpers.
-- `auth.js` — login and signup behavior.
-- `supabase-schema.sql` — database schema, grants, indexes, and RLS policies.
-- `parser.js` — local Excel/CSV/TSV parser and masking logic.
-- `upload.js` — authenticated import flow.
-- `console.js` — dashboard, date ranges, manual transactions, goals, allocations, workbook preview, and export.
-- `styles.css` — application, auth, goal, spreadsheet, and responsive styles.
-
-## Data model
-
-### Statements
-
-Stores metadata plus the masked source-sheet rows. The latest statement is used for the workbook preview and statement snapshot.
-
-### Transactions
-
-Stores both imported and manually entered transactions. `source_kind` distinguishes `imported` from `manual` rows.
-
-### Finance settings
-
-Stores the user's flexible allocation categories as JSON.
+Your paycheck plan can be divided into any categories you want. Categories marked as **Spendable** are combined into your spending allowance, while the remaining categories can represent savings, investing, debt repayment, or other financial priorities.
 
 ### Saving goals
 
-Stores goal name, category, target amount, saved amount, optional target date, notes, and status.
+Create a goal with:
 
-## Privacy model
+- a name
+- a category
+- a target amount
+- the amount already saved
+- an optional target date
+- optional notes
 
-This version is no longer local-only. Account data is intentionally persisted in Supabase so users can return later without re-uploading their statement.
+You can update the saved amount at any time and the dashboard will show your progress.
 
-Masking still happens in the browser before parsed source rows are written to Supabase. The raw `.xlsx`, `.csv`, or `.tsv` file is not uploaded by this application.
+### Manual transactions
+
+Use **Add transaction** when you need to record something that was not included in an imported statement. Manual transactions are saved to your account and included in your dashboard totals.
+
+## Statement imports
+
+Supported formats:
+
+- Excel `.xlsx`
+- CSV `.csv`
+- TSV `.tsv`
+
+The importer looks for a transaction table containing common fields such as transaction date, description, debit amount, credit amount, currency, and statement code.
+
+You can import additional statements later using **Import statement** on the dashboard.
+
+> When importing overlapping statement periods, check your transaction history carefully. Importing the same transactions more than once may currently create duplicates.
+
+## Privacy and data storage
+
+The original statement file itself is not uploaded by the app.
+
+Your browser reads the file first, applies any masking rules you entered, and converts it into parsed transaction and statement data. The parsed, masked data is then saved to Supabase so it remains available when you sign out, close the browser, or use another device.
+
+Each user's saved finance data is tied to their authenticated account and protected using Supabase Row Level Security policies.
+
+Do not use the masking feature as a substitute for reviewing what information you are comfortable storing online.
+
+## Exporting your data
+
+The **Simplify & export** button downloads your saved transactions as a CSV containing fields such as:
+
+- Date
+- Description
+- Category
+- Type
+- Amount
+- Currency
+- Whether it counts as spending
+- Whether it was imported or added manually
+
+## Current limitations
+
+- Transaction categorisation is based on rules and may not always classify a merchant correctly.
+- Imported statement layouts vary between banks, so some exports may need adjustment before they can be recognised.
+- Importing overlapping statements can result in duplicate transactions.
+- Saving-goal progress is updated manually and is not automatically linked to a separate bank or investment account.
+- This is a personal finance tracking tool, not financial advice.
+
+## For contributors
+
+This project is a static HTML/CSS/JavaScript application hosted on GitHub Pages and uses Supabase for authentication and persistent data storage.
+
+Main files:
+
+- `index.html` / `login.html` — authentication entry points
+- `signup.html` — account creation
+- `console.html` — finance dashboard
+- `auth.js` — sign-up and login behaviour
+- `data.js` — Supabase data access
+- `parser.js` — Excel/CSV/TSV parsing and masking
+- `upload.js` — statement import flow
+- `console.js` — dashboard behaviour
+- `styles.css` — application styling
+- `supabase-schema.sql` — database tables and Row Level Security policies
+
+For a new Supabase project, run `supabase-schema.sql` in the Supabase SQL Editor and configure the browser-safe project URL and publishable key in `supabase-config.js`. Never place a Supabase secret or service-role key in this repository.
