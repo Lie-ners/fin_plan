@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="dark" />
   <title>Create account | Flexible Finance Tracker</title>
   <link rel="stylesheet" href="styles.css" />
@@ -18,7 +18,8 @@
 
       <form id="authForm" class="auth-form">
         <label>Username
-          <input id="displayName" type="text" autocomplete="nickname" maxlength="40" required placeholder="e.g. Linus" />
+          <input id="displayName" type="text" autocomplete="nickname" minlength="2" maxlength="40" required placeholder="e.g. iliketohuntxmm69" />
+          <small class="field-hint">Usernames are unique and are not case-sensitive.</small>
         </label>
         <label>Email
           <input id="authEmail" type="email" autocomplete="email" required placeholder="you@example.com" />

@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="dark" />
   <title>Import Statement | Flexible Finance Tracker</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <input id="statementUpload" class="visually-hidden" type="file" accept=".xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+  <input id="statementUpload" class="visually-hidden" type="file" accept=".pdf,.xlsx,.csv,.tsv,application/pdf,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
 
   <section class="upload-view" aria-labelledby="uploadTitle">
     <div class="upload-card entrance entrance-1">
@@ -24,7 +24,7 @@
       </div>
 
       <h1 id="uploadTitle">Import your bank statement</h1>
-      <p class="subhead">Import once and your masked transactions will be saved to your account. After that, you can log back in at any time and keep adding transactions manually without uploading the same file again.</p>
+      <p class="subhead">Import a statement from your banking app or computer and your masked transactions will be saved to your account. PDF statements are read on your device; image-only PDFs are OCRed in the browser before anything is saved.</p>
 
       <section class="mask-card setup-step" aria-labelledby="maskTitle">
         <div class="mask-card-heading">
@@ -34,7 +34,7 @@
           </div>
           <button id="addMaskBtn" class="button ghost" type="button">Add another</button>
         </div>
-        <p class="muted small">Mask account numbers, card fragments, names, or references before anything is saved to Supabase. The raw workbook itself is not uploaded; the browser parses it first, applies these replacements, then saves the masked result.</p>
+        <p class="muted small">Mask account numbers, card fragments, names, or references before anything is saved to Supabase. The original statement file is not uploaded; your browser reads it first, applies these replacements, then saves only the parsed masked result.</p>
         <div id="maskRows" class="mask-rows"></div>
       </section>
 
@@ -44,14 +44,23 @@
             <p class="eyebrow">Step 2 · Import statement</p>
             <h2 id="importTitle">Choose your bank statement</h2>
           </div>
-          <span class="file-type-badge">XLSX · CSV · TSV</span>
+          <span class="file-type-badge">PDF · XLSX · CSV · TSV</span>
         </div>
         <label id="dropZone" class="drop-zone" for="statementUpload">
           <span class="upload-icon" aria-hidden="true">↥</span>
-          <strong>Choose or drop your statement here</strong>
-          <small>Your masking rules are applied before the parsed data is saved</small>
+          <strong>Choose your statement</strong>
+          <small>On mobile, select the PDF downloaded from your banking app. You can also use XLSX, CSV, or TSV.</small>
         </label>
       </section>
+
+      <div id="importProgress" class="import-progress" role="status" aria-live="polite" hidden>
+        <div class="import-progress-head">
+          <strong id="importProgressTitle">Preparing statement…</strong>
+          <span id="importProgressValue">0%</span>
+        </div>
+        <div class="import-progress-track" aria-hidden="true"><div id="importProgressBar"></div></div>
+        <small id="importProgressDetail">Large image-based PDFs may take a little longer on phones.</small>
+      </div>
 
       <div class="privacy-note">
         <strong>Account-backed storage.</strong> Parsed, masked transaction data is stored in your Supabase account so it remains available after you close the browser. Access is restricted to your signed-in user through database Row Level Security.
@@ -60,8 +69,8 @@
       <button id="continueSessionBtn" class="button primary full-width" type="button" hidden>Continue to dashboard</button>
 
       <details class="help-card">
-        <summary>Expected columns</summary>
-        <p>The importer looks for a transaction table with columns like Transaction Date, Statement Code, Description, Currency, Debit Amount, and Credit Amount.</p>
+        <summary>Supported statement formats</summary>
+        <p>PDF statements from supported bank layouts can be read directly, including image-only PDFs using on-device OCR. Spreadsheet imports look for columns such as Transaction Date, Description, Debit Amount, Credit Amount, Currency, and Statement Code.</p>
       </details>
 
       <p id="uploadError" class="error" role="alert" hidden></p>

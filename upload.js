@@ -9,11 +9,35 @@
   const continueBtn = $("continueSessionBtn");
   const dashboardLink = $("dashboardLink");
   const signOutBtn = $("signOutBtn");
+  const importProgress = $("importProgress");
+  const importProgressTitle = $("importProgressTitle");
+  const importProgressValue = $("importProgressValue");
+  const importProgressBar = $("importProgressBar");
+  const importProgressDetail = $("importProgressDetail");
 
   function setUploadError(message) {
     const el = $("uploadError");
     el.hidden = !message;
     el.textContent = message || "";
+  }
+
+
+  function setImportProgress(update = null) {
+    if (!importProgress) return;
+    if (!update) {
+      importProgress.hidden = true;
+      importProgressBar.style.width = "0%";
+      importProgressValue.textContent = "0%";
+      return;
+    }
+
+    const progress = Math.max(0, Math.min(1, Number(update.progress ?? 0)));
+    const percent = Math.round(progress * 100);
+    importProgress.hidden = false;
+    importProgressTitle.textContent = update.message || "Reading statement…";
+    importProgressValue.textContent = `${percent}%`;
+    importProgressBar.style.width = `${percent}%`;
+    importProgressDetail.textContent = update.detail || "Your statement is being processed on this device.";
   }
 
   function createMaskRow(needle = "", replacement = "") {
@@ -62,17 +86,40 @@
     try {
       const { readStatementRows, importStatementFromRows } = window.FinanceStatementParser;
       const maskRules = getMaskRules();
-      const rows = await readStatementRows(file);
+      setImportProgress({
+        progress: 0.02,
+        message: `Opening ${file.name}`,
+        detail: file.name.toLowerCase().endsWith(".pdf")
+          ? "PDF pages stay on this device. Image-only pages are OCRed locally in your browser."
+          : "Reading your statement locally before saving parsed data."
+      });
+      const rows = await readStatementRows(file, setImportProgress);
+      setImportProgress({
+        progress: 0.94,
+        message: "Organising transactions…",
+        detail: "Applying your masking rules and preparing the statement for your account."
+      });
       const imported = importStatementFromRows(rows, file.name, maskRules);
       if (!imported.transactions.length) {
-        throw new Error("No transactions were found. Check that the file includes debit and credit amount columns.");
+        throw new Error("No transactions were found. This statement layout may not be supported yet.");
       }
       imported.maskRules = maskRules;
+      setImportProgress({
+        progress: 0.97,
+        message: "Saving to your account…",
+        detail: `${imported.transactions.length} transactions found.`
+      });
       await window.FinanceData.importStatement(imported);
+      setImportProgress({
+        progress: 1,
+        message: "Import complete",
+        detail: `${imported.transactions.length} transactions saved. Opening your dashboard…`
+      });
       window.location.href = "console.html";
     } catch (error) {
       console.error(error);
-      setUploadError(error?.message || "Could not import this file. Try exporting the statement as CSV.");
+      setImportProgress(null);
+      setUploadError(error?.message || "Could not import this statement. Try another export format or a clearer PDF.");
     } finally {
       dropZone.classList.remove("is-importing");
       uploadInput.value = "";
@@ -81,8 +128,8 @@
 
   async function init() {
     try {
-      const user = await window.FinanceData.requireUser();
-      const accountName = String(user.user_metadata?.username || user.user_metadata?.display_name || "").trim() || String(user.email || "").split("@")[0] || "User";
+      const { user, profile } = await window.FinanceData.getAccountIdentity();
+      const accountName = String(profile?.username || user.user_metadata?.username || user.user_metadata?.display_name || "").trim() || String(user.email || "").split("@")[0] || "User";
       $("accountName").textContent = accountName;
       const hasData = await window.FinanceData.hasTransactions();
       const importingAnother = new URLSearchParams(location.search).get("import") === "1";

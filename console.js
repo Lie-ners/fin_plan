@@ -85,6 +85,7 @@
 
   let state = {
     user: null,
+    profile: null,
     settings: { categories: createCategories(defaultSettings.categories) },
     transactions: [],
     statement: null,
@@ -214,8 +215,10 @@
       periodEndMonth = "";
       return;
     }
+    // Preserve the original single-month dashboard behaviour by default.
+    // Users can widen the range with the From/To controls or All history.
     periodEndMonth = allMonths[allMonths.length - 1];
-    periodStartMonth = allMonths[Math.max(0, allMonths.length - 3)];
+    periodStartMonth = periodEndMonth;
   }
 
   function renderPeriodControls() {
@@ -437,7 +440,13 @@
   }
 
   function manualBalanceAdjustment() {
-    return manualTransactions().reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
+    const statementDate = state.statement?.statementDate || "";
+    // The imported balance is already a snapshot as of statementDate. Only
+    // manual entries after that snapshot should move the displayed balance;
+    // otherwise historical manual entries get counted a second time.
+    return manualTransactions()
+      .filter(transaction => !statementDate || String(transaction.date || "") > statementDate)
+      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
   }
 
   function adjustedStatementBalances() {
@@ -562,8 +571,8 @@
   function renderSheet() {
     const { rows, manualRowIndexes, manualCount } = sheetRowsWithManualEntries();
     if (!rows.length) {
-      $("sheetDimensions").textContent = "No source sheet";
-      $("sheetTable").innerHTML = `<tbody><tr><td class="sheet-empty">Import a statement to populate the source spreadsheet preview. Your dashboard can continue to use manually added transactions even without a workbook.</td></tr></tbody>`;
+      $("sheetDimensions").textContent = "No source data";
+      $("sheetTable").innerHTML = `<tbody><tr><td class="sheet-empty">Import a statement to populate the source-data preview. Your dashboard can continue to use manually added transactions even without an imported file.</td></tr></tbody>`;
       return;
     }
 
@@ -653,7 +662,9 @@
 
   function escapeAttr(value) { return escapeHtml(value); }
 
-  function displayNameForUser(user) {
+  function displayNameForUser(user, profile = state.profile) {
+    const profileName = String(profile?.username || "").trim();
+    if (profileName) return profileName;
     const metadataName = String(user?.user_metadata?.username || user?.user_metadata?.display_name || "").trim();
     if (metadataName) return metadataName;
     const emailPrefix = String(user?.email || "").split("@")[0].trim();
@@ -663,6 +674,31 @@
   function userInitial(name) {
     const first = String(name || "User").trim().charAt(0);
     return first ? first.toUpperCase() : "U";
+  }
+
+  function applyUserIdentity(user, profile = state.profile) {
+    if (!user) return;
+    state.user = user;
+    if (profile) state.profile = profile;
+    const accountName = displayNameForUser(user, profile);
+    $("userName").textContent = accountName;
+    $("userNameChip").textContent = accountName;
+    $("userAvatar").textContent = userInitial(accountName);
+  }
+
+  function syncAccountPanelFields() {
+    if (!state.user) return;
+    $("accountUsername").value = displayNameForUser(state.user, state.profile);
+    $("accountEmail").value = state.user.email || "";
+    $("accountUserId").value = state.user.id || "";
+  }
+
+  function setAccountMessage(id, message, isError = false) {
+    const el = $(id);
+    el.textContent = message || "";
+    el.hidden = !message;
+    el.classList.toggle("error", Boolean(message) && isError);
+    el.classList.toggle("success", Boolean(message) && !isError);
   }
 
   function formatPercent(value, includeSymbol = true) {
@@ -746,15 +782,14 @@
     try {
       const loaded = await window.FinanceData.loadDashboardData();
       state.user = loaded.user;
+      state.profile = loaded.profile;
       state.transactions = loaded.transactions;
       state.statement = loaded.statement;
       state.sheetRows = loaded.sheetRows;
       state.maskRules = loaded.maskRules;
       state.goals = loaded.goals;
-      const accountName = displayNameForUser(state.user);
-      $("userName").textContent = accountName;
-      $("userNameChip").textContent = accountName;
-      $("userAvatar").textContent = userInitial(accountName);
+      applyUserIdentity(loaded.user, loaded.profile);
+      syncAccountPanelFields();
 
       if (loaded.settings && validSettings(loaded.settings)) {
         state.settings = { categories: createCategories(loaded.settings.categories) };
@@ -778,6 +813,128 @@
       $("budgetMessage").classList.add("over");
     }
   }
+
+  function openAccountPanel() {
+    syncAccountPanelFields();
+    ["usernameMessage", "emailMessage", "passwordMessage", "deleteAccountMessage"].forEach(id => setAccountMessage(id, ""));
+    $("deleteAccountConfirm").value = "";
+    $("deleteAccountBtn").disabled = true;
+    $("accountPanelBackdrop").hidden = false;
+    $("accountPanel").classList.add("is-open");
+    $("accountPanel").setAttribute("aria-hidden", "false");
+    $("accountPanelBtn").setAttribute("aria-expanded", "true");
+    document.body.classList.add("account-panel-open");
+    window.setTimeout(() => $("accountUsername").focus(), 80);
+  }
+
+  function closeAccountPanel() {
+    $("accountPanel").classList.remove("is-open");
+    $("accountPanel").setAttribute("aria-hidden", "true");
+    $("accountPanelBtn").setAttribute("aria-expanded", "false");
+    document.body.classList.remove("account-panel-open");
+    window.setTimeout(() => { $("accountPanelBackdrop").hidden = true; }, 220);
+  }
+
+  $("accountPanelBtn").addEventListener("click", openAccountPanel);
+  $("accountPanelClose").addEventListener("click", closeAccountPanel);
+  $("accountPanelBackdrop").addEventListener("click", closeAccountPanel);
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && $("accountPanel").classList.contains("is-open")) closeAccountPanel();
+  });
+
+  $("usernameForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const submit = event.submitter;
+    const username = $("accountUsername").value.trim();
+    submit.disabled = true;
+    setAccountMessage("usernameMessage", "");
+    try {
+      const updated = await window.FinanceData.updateUsername(username);
+      state.profile = updated.profile;
+      applyUserIdentity(updated.user, updated.profile);
+      syncAccountPanelFields();
+      setAccountMessage("usernameMessage", "Username updated.");
+      flashRefresh();
+    } catch (error) {
+      setAccountMessage("usernameMessage", error?.message || "Could not update username.", true);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  $("emailForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const submit = event.submitter;
+    const requestedEmail = $("accountEmail").value.trim().toLowerCase();
+    submit.disabled = true;
+    setAccountMessage("emailMessage", "");
+    try {
+      const user = await window.FinanceData.updateEmail(requestedEmail);
+      applyUserIdentity(user);
+      if (String(user?.email || "").toLowerCase() === requestedEmail) {
+        syncAccountPanelFields();
+        setAccountMessage("emailMessage", "Email updated.");
+      } else {
+        $("accountEmail").value = requestedEmail;
+        setAccountMessage("emailMessage", "Email change requested. Check your inbox and follow Supabase's confirmation link to finish the change.");
+      }
+    } catch (error) {
+      setAccountMessage("emailMessage", error?.message || "Could not update email.", true);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  $("passwordForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const submit = event.submitter;
+    const currentPassword = $("accountCurrentPassword").value;
+    const newPassword = $("accountNewPassword").value;
+    const confirmation = $("accountConfirmPassword").value;
+    setAccountMessage("passwordMessage", "");
+    if (newPassword !== confirmation) {
+      setAccountMessage("passwordMessage", "The new passwords do not match.", true);
+      return;
+    }
+    submit.disabled = true;
+    try {
+      const user = await window.FinanceData.updatePassword(currentPassword, newPassword);
+      if (user) applyUserIdentity(user);
+      $("passwordForm").reset();
+      setAccountMessage("passwordMessage", "Password updated.");
+    } catch (error) {
+      setAccountMessage("passwordMessage", error?.message || "Could not update password.", true);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  $("deleteAccountConfirm").addEventListener("input", event => {
+    $("deleteAccountBtn").disabled = event.target.value.trim().toUpperCase() !== "DELETE";
+  });
+
+  $("deleteAccountForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    if ($("deleteAccountConfirm").value.trim().toUpperCase() !== "DELETE") return;
+    if (!confirm("Permanently delete this account and all of its saved finance data? This cannot be undone.")) return;
+
+    const submit = event.submitter;
+    const original = submit.textContent;
+    submit.disabled = true;
+    submit.textContent = "Deleting account…";
+    setAccountMessage("deleteAccountMessage", "");
+    try {
+      await window.FinanceData.deleteAccount();
+    } catch (error) {
+      console.error(error);
+      const message = /function|404|not found/i.test(error?.message || "")
+        ? "Account deletion is not available yet. Deploy the Supabase delete-account Edge Function included with the project, then try again."
+        : (error?.message || "Could not delete account.");
+      setAccountMessage("deleteAccountMessage", message, true);
+      submit.disabled = false;
+      submit.textContent = original;
+    }
+  });
 
   $("periodFrom").addEventListener("change", event => {
     periodStartMonth = event.target.value;
@@ -804,6 +961,43 @@
   $("importStatementBtn").addEventListener("click", () => { location.href = "import.html?import=1"; });
   $("signOutBtn").addEventListener("click", () => window.FinanceData.signOut());
   $("simplifyExportBtn").addEventListener("click", exportSimplifiedTransactions);
+
+  $("clearImportedBtn").addEventListener("click", async event => {
+    const importedCount = state.transactions.filter(transaction => transaction.sourceKind === "imported").length;
+    if (!importedCount && !state.statement) {
+      alert("There is no imported statement data to clear.");
+      return;
+    }
+
+    const message = importedCount
+      ? `Clear ${importedCount} imported transaction${importedCount === 1 ? "" : "s"} and the saved source statement?\n\nManual transactions, saving goals, and your budget plan will be kept.`
+      : "Clear the saved source statement?\n\nManual transactions, saving goals, and your budget plan will be kept.";
+    if (!confirm(message)) return;
+
+    const button = event.currentTarget;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = "Clearing…";
+
+    try {
+      await window.FinanceData.clearImportedData();
+      state.transactions = state.transactions.filter(transaction => transaction.sourceKind !== "imported");
+      state.statement = null;
+      state.sheetRows = [];
+      state.maskRules = [];
+      initializePeriodRange();
+      renderAll();
+      flashRefresh();
+      button.textContent = "Imported data cleared";
+      window.setTimeout(() => { button.textContent = original; }, 1400);
+    } catch (error) {
+      console.error(error);
+      alert(error?.message || "Could not clear imported data.");
+      button.textContent = original;
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   const transactionDialog = $("transactionDialog");
   $("addTransactionBtn").addEventListener("click", () => {

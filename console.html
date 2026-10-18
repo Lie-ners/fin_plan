@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="dark" />
   <title>Finance Console | Flexible Finance Tracker</title>
   <link rel="stylesheet" href="styles.css" />
@@ -17,13 +17,14 @@
       </div>
 
       <div class="dashboard-hero-side">
-        <div class="user-profile-chip" aria-label="Signed-in account">
+        <button id="accountPanelBtn" class="user-profile-chip" type="button" aria-label="Open account settings" aria-controls="accountPanel" aria-expanded="false">
           <span id="userAvatar" class="user-avatar" aria-hidden="true">?</span>
-          <div class="user-profile-copy">
+          <span class="user-profile-copy">
             <small>Signed in as</small>
             <strong id="userNameChip">—</strong>
-          </div>
-        </div>
+          </span>
+          <span class="account-chip-chevron" aria-hidden="true">›</span>
+        </button>
         <div class="dashboard-primary-actions">
           <button id="importStatementBtn" class="button ghost" type="button">Import statement</button>
           <button id="addTransactionBtn" class="button primary" type="button">Add transaction</button>
@@ -47,7 +48,7 @@
 
     <section class="privacy-note entrance entrance-2 account-note">
       <span class="sync-dot" aria-hidden="true"></span>
-      <span><strong>Account synced.</strong> Masked finance data is stored with your account; the original workbook file is never uploaded.</span>
+      <span><strong>Account synced.</strong> Masked finance data is stored with your account; the original statement file is never uploaded.</span>
     </section>
 
     <section class="statement-strip entrance entrance-3" aria-label="Statement details">
@@ -155,17 +156,18 @@
       <section class="panel sheet-panel entrance entrance-8" aria-labelledby="sheetViewerTitle">
         <div class="panel-heading sheet-heading">
           <div>
-            <p class="eyebrow">Latest source workbook</p>
-            <h2 id="sheetViewerTitle">Uploaded spreadsheet</h2>
-            <p class="muted small sheet-help">The most recently imported masked source sheet is shown here. Manual transactions are overlaid into its transaction block where possible. Simplify &amp; export downloads all saved transactions as a clean Excel-compatible CSV.</p>
+            <p class="eyebrow">Latest source statement</p>
+            <h2 id="sheetViewerTitle">Imported statement data</h2>
+            <p class="muted small sheet-help">The most recently imported masked statement data is shown here. PDF imports are converted into a structured transaction table; manual transactions are overlaid where possible. Simplify &amp; export downloads all saved transactions as a clean Excel-compatible CSV.</p>
           </div>
           <div class="sheet-heading-actions">
             <span id="sheetDimensions" class="badge sheet-badge">—</span>
+            <button id="clearImportedBtn" class="button ghost danger-button" type="button" title="Delete imported statement transactions while keeping manual entries, goals, and budget settings">Clear imported data</button>
             <button id="simplifyExportBtn" class="button primary sheet-export-button" type="button">Simplify &amp; export</button>
           </div>
         </div>
-        <div id="sheetViewport" class="sheet-viewport" tabindex="0" role="region" aria-label="Uploaded spreadsheet preview">
-          <table id="sheetTable" class="sheet-table" aria-label="Uploaded spreadsheet data"></table>
+        <div id="sheetViewport" class="sheet-viewport" tabindex="0" role="region" aria-label="Imported statement data preview">
+          <table id="sheetTable" class="sheet-table" aria-label="Imported statement data"></table>
         </div>
       </section>
     </main>
@@ -175,6 +177,103 @@
       <span>Synced to your account</span>
     </footer>
   </div>
+
+  <div id="accountPanelBackdrop" class="account-panel-backdrop" hidden></div>
+  <aside id="accountPanel" class="account-panel" aria-labelledby="accountPanelTitle" aria-hidden="true">
+    <div class="account-panel-header">
+      <div>
+        <p class="eyebrow">Account</p>
+        <h2 id="accountPanelTitle">Profile &amp; security</h2>
+        <p class="muted small">Manage how you sign in and how your name appears in the app.</p>
+      </div>
+      <button id="accountPanelClose" class="icon-button" type="button" aria-label="Close account settings">×</button>
+    </div>
+
+    <div class="account-panel-body">
+      <section class="account-settings-section account-identity-section">
+        <div class="account-settings-heading">
+          <div>
+            <h3>Account ID</h3>
+            <p class="muted small">Your unique Supabase user ID. It identifies this account even if your username or email changes.</p>
+          </div>
+        </div>
+        <label class="account-id-field">Account ID
+          <input id="accountUserId" type="text" readonly aria-readonly="true" />
+        </label>
+      </section>
+
+      <section class="account-settings-section">
+        <div class="account-settings-heading">
+          <div>
+            <h3>Username</h3>
+            <p class="muted small">Usernames are unique and case-insensitive. Shown on your dashboard and import screen.</p>
+          </div>
+        </div>
+        <form id="usernameForm" class="account-settings-form">
+          <label>Username
+            <input id="accountUsername" type="text" autocomplete="nickname" minlength="2" maxlength="40" required />
+          </label>
+          <p id="usernameMessage" class="account-form-message" role="status" hidden></p>
+          <button class="button primary" type="submit">Save username</button>
+        </form>
+      </section>
+
+      <section class="account-settings-section">
+        <div class="account-settings-heading">
+          <div>
+            <h3>Email address</h3>
+            <p class="muted small">Supabase may ask you to confirm the change by email.</p>
+          </div>
+        </div>
+        <form id="emailForm" class="account-settings-form">
+          <label>Email
+            <input id="accountEmail" type="email" autocomplete="email" required />
+          </label>
+          <p id="emailMessage" class="account-form-message" role="status" hidden></p>
+          <button class="button primary" type="submit">Change email</button>
+        </form>
+      </section>
+
+      <section class="account-settings-section">
+        <div class="account-settings-heading">
+          <div>
+            <h3>Password</h3>
+            <p class="muted small">Use at least 8 characters. Your current password may be required by your Supabase security settings.</p>
+          </div>
+        </div>
+        <form id="passwordForm" class="account-settings-form">
+          <label>Current password
+            <input id="accountCurrentPassword" type="password" autocomplete="current-password" placeholder="Current password" />
+          </label>
+          <label>New password
+            <input id="accountNewPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters" />
+          </label>
+          <label>Confirm new password
+            <input id="accountConfirmPassword" type="password" autocomplete="new-password" minlength="8" required />
+          </label>
+          <p id="passwordMessage" class="account-form-message" role="status" hidden></p>
+          <button class="button primary" type="submit">Update password</button>
+        </form>
+      </section>
+
+      <section class="account-settings-section account-danger-zone">
+        <div class="account-settings-heading">
+          <div>
+            <p class="eyebrow danger-eyebrow">Danger zone</p>
+            <h3>Delete account</h3>
+            <p class="muted small">Permanently deletes your login and all finance data tied to this account, including imported and manual transactions, statements, goals, and budget settings.</p>
+          </div>
+        </div>
+        <form id="deleteAccountForm" class="account-settings-form">
+          <label>Type <strong>DELETE</strong> to confirm
+            <input id="deleteAccountConfirm" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DELETE" />
+          </label>
+          <p id="deleteAccountMessage" class="account-form-message" role="status" hidden></p>
+          <button id="deleteAccountBtn" class="button danger-button account-delete-button" type="submit" disabled>Delete my account</button>
+        </form>
+      </section>
+    </div>
+  </aside>
 
   <dialog id="transactionDialog">
     <form id="transactionForm" method="dialog" class="dialog-card">

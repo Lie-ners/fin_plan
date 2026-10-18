@@ -1,16 +1,466 @@
 (() => {
   "use strict";
 
-  async function readStatementRows(file) {
+  const PDFJS_BASE = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174";
+  const TESSERACT_SCRIPT = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+  let pdfJsPromise = null;
+  let tesseractPromise = null;
+
+  async function readStatementRows(file, onProgress = () => {}) {
     const name = file.name.toLowerCase();
     if (name.endsWith(".csv") || name.endsWith(".tsv")) {
+      onProgress({ progress: 0.35, message: "Reading spreadsheet…", detail: "Parsing transaction rows on this device." });
       const text = await file.text();
       return parseDelimited(text, name.endsWith(".tsv") ? "\t" : ",");
     }
     if (name.endsWith(".xlsx")) {
+      onProgress({ progress: 0.25, message: "Reading Excel statement…", detail: "Opening the workbook locally in your browser." });
       return readXlsxRows(await file.arrayBuffer());
     }
-    throw new Error("Unsupported file type. Upload an .xlsx, .csv, or .tsv statement export.");
+    if (name.endsWith(".pdf") || file.type === "application/pdf") {
+      return readPdfRows(await file.arrayBuffer(), file.name, onProgress);
+    }
+    throw new Error("Unsupported file type. Upload a PDF, .xlsx, .csv, or .tsv statement export.");
+  }
+
+  function loadScriptOnce(src, test) {
+    if (test()) return Promise.resolve();
+    const existing = Array.from(document.scripts).find(script => script.src === src);
+    if (existing) {
+      return new Promise((resolve, reject) => {
+        if (test()) return resolve();
+        existing.addEventListener("load", resolve, { once: true });
+        existing.addEventListener("error", () => reject(new Error(`Could not load ${src}`)), { once: true });
+      });
+    }
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.async = true;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error(`Could not load ${src}`));
+      document.head.appendChild(script);
+    });
+  }
+
+  async function ensurePdfJs() {
+    if (!pdfJsPromise) {
+      pdfJsPromise = loadScriptOnce(`${PDFJS_BASE}/pdf.min.js`, () => Boolean(window.pdfjsLib?.getDocument))
+        .then(() => {
+          if (!window.pdfjsLib?.getDocument) throw new Error("PDF reader failed to initialise.");
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = `${PDFJS_BASE}/pdf.worker.min.js`;
+        });
+    }
+    return pdfJsPromise;
+  }
+
+  async function ensureTesseract() {
+    if (!tesseractPromise) {
+      tesseractPromise = loadScriptOnce(TESSERACT_SCRIPT, () => Boolean(window.Tesseract?.createWorker))
+        .then(() => {
+          if (!window.Tesseract?.createWorker) throw new Error("PDF OCR failed to initialise.");
+        });
+    }
+    return tesseractPromise;
+  }
+
+  async function readPdfRows(buffer, fileName, onProgress) {
+    onProgress({ progress: 0.05, message: "Opening PDF…", detail: "Checking the statement for selectable text." });
+    await ensurePdfJs();
+
+    let pdf;
+    try {
+      pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+    } catch (error) {
+      if (/password/i.test(String(error?.message || error?.name || ""))) {
+        throw new Error("This PDF is password-protected. Remove the password in your banking app or PDF viewer, then try again.");
+      }
+      throw new Error("Could not open this PDF. Try downloading the statement again from your banking app.");
+    }
+
+    if (!pdf.numPages) throw new Error("This PDF does not contain any readable pages.");
+
+    const allLines = [];
+    let ocrWorker = null;
+    let usedOcr = false;
+
+    try {
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+        const page = await pdf.getPage(pageNumber);
+        const pageBase = 0.08 + ((pageNumber - 1) / pdf.numPages) * 0.80;
+        onProgress({
+          progress: pageBase,
+          message: `Reading PDF page ${pageNumber} of ${pdf.numPages}`,
+          detail: usedOcr ? "Image text is being recognised locally on this device." : "Looking for transaction text."
+        });
+
+        let lines = await extractPdfTextLines(page);
+        if (!looksLikeStatementText(lines)) {
+          usedOcr = true;
+          if (!ocrWorker) {
+            onProgress({
+              progress: pageBase,
+              message: "Preparing on-device PDF OCR…",
+              detail: "This statement is image-based. The OCR engine loads once, then processes pages one at a time."
+            });
+            await ensureTesseract();
+            ocrWorker = await window.Tesseract.createWorker("eng", 1);
+            try {
+              await ocrWorker.setParameters({
+                tessedit_pageseg_mode: "6",
+                preserve_interword_spaces: "1"
+              });
+            } catch (_) {}
+          }
+
+          const canvas = await renderPdfPageForOcr(page);
+          onProgress({
+            progress: pageBase + (0.35 / pdf.numPages),
+            message: `Scanning PDF page ${pageNumber} of ${pdf.numPages}`,
+            detail: "OCR is running in your browser. Keeping this page open will let the import finish."
+          });
+          const result = await ocrWorker.recognize(canvas);
+          lines = normalizePdfTextLines(result?.data?.text || "");
+          canvas.width = 1;
+          canvas.height = 1;
+        }
+
+        allLines.push(...lines, "__PAGE_BREAK__");
+        page.cleanup?.();
+        onProgress({
+          progress: 0.08 + (pageNumber / pdf.numPages) * 0.80,
+          message: `Processed page ${pageNumber} of ${pdf.numPages}`,
+          detail: usedOcr ? "Recognised statement text locally on this device." : "Read embedded PDF text."
+        });
+      }
+    } finally {
+      if (ocrWorker) await ocrWorker.terminate();
+      try { await pdf.destroy(); } catch (_) {}
+    }
+
+    onProgress({ progress: 0.90, message: "Building transaction history…", detail: "Converting the PDF into structured finance rows." });
+    const rows = pdfTextLinesToRows(allLines, fileName);
+    const headerIndex = rows.findIndex(row => row?.[0] === "Transaction Date");
+    const transactionCount = headerIndex >= 0 ? rows.length - headerIndex - 1 : 0;
+    if (transactionCount <= 0) {
+      throw new Error("The PDF opened, but no transactions could be recognised. This bank's PDF layout may not be supported yet.");
+    }
+    return rows;
+  }
+
+  async function extractPdfTextLines(page) {
+    const content = await page.getTextContent();
+    const items = (content.items || [])
+      .map(item => ({
+        text: String(item.str || "").trim(),
+        x: Number(item.transform?.[4] || 0),
+        y: Number(item.transform?.[5] || 0)
+      }))
+      .filter(item => item.text);
+    if (!items.length) return [];
+
+    items.sort((a, b) => (b.y - a.y) || (a.x - b.x));
+    const groups = [];
+    for (const item of items) {
+      const group = groups.find(candidate => Math.abs(candidate.y - item.y) <= 2.5);
+      if (group) group.items.push(item);
+      else groups.push({ y: item.y, items: [item] });
+    }
+    groups.sort((a, b) => b.y - a.y);
+    return groups.map(group => group.items.sort((a, b) => a.x - b.x).map(item => item.text).join(" ").replace(/\s+/g, " ").trim()).filter(Boolean);
+  }
+
+  function looksLikeStatementText(lines) {
+    const text = lines.join(" ");
+    const amountCount = (text.match(/\b[A-Z]{3}\s*-?\s*[\d,]+(?:\.\d{1,2})?/g) || []).length;
+    const dateCount = (text.match(/\b\d{1,2}\s+[A-Za-z]{3,9}\s+20\d{2}\b/g) || []).length;
+    return text.length > 250 && amountCount >= 2 && dateCount >= 1;
+  }
+
+  async function renderPdfPageForOcr(page) {
+    const baseViewport = page.getViewport({ scale: 1 });
+    const scale = Math.min(2.35, 1800 / Math.max(1, baseViewport.width));
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(viewport.width));
+    canvas.height = Math.max(1, Math.round(viewport.height));
+    const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: context, viewport }).promise;
+    return canvas;
+  }
+
+  function normalizePdfTextLines(text) {
+    return String(text || "")
+      .split(/\r?\n/)
+      .map(line => normalizePdfLine(line))
+      .filter(Boolean);
+  }
+
+  function normalizePdfLine(line) {
+    return String(line || "")
+      .replace(/[−–—]/g, "-")
+      .replace(/\u00a0/g, " ")
+      .replace(/[‘’]/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  const PDF_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const PDF_MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+  function editDistance(a, b) {
+    const x = String(a || "");
+    const y = String(b || "");
+    const row = Array.from({ length: y.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= x.length; i++) {
+      let previous = row[0];
+      row[0] = i;
+      for (let j = 1; j <= y.length; j++) {
+        const before = row[j];
+        row[j] = Math.min(row[j] + 1, row[j - 1] + 1, previous + (x[i - 1] === y[j - 1] ? 0 : 1));
+        previous = before;
+      }
+    }
+    return row[y.length];
+  }
+
+  function fuzzyMonthIndex(token) {
+    const clean = String(token || "")
+      .toLowerCase()
+      .replace(/0/g, "o")
+      .replace(/1/g, "i")
+      .replace(/[^a-z]/g, "")
+      .slice(0, 3);
+    if (!clean) return -1;
+    let best = { index: -1, distance: 99 };
+    PDF_MONTHS.forEach((month, index) => {
+      const distance = editDistance(clean, month);
+      if (distance < best.distance) best = { index, distance };
+    });
+    return best.distance <= 1 || (clean.length >= 2 && best.distance <= 2) ? best.index : -1;
+  }
+
+  function parsePdfMonthHeading(line) {
+    const match = normalizePdfLine(line).match(/^([A-Za-z0-9]{2,12})\s+(20\d{2})$/i);
+    if (!match) return null;
+    const monthIndex = fuzzyMonthIndex(match[1]);
+    if (monthIndex < 0) return null;
+    return { month: monthIndex + 1, year: Number(match[2]) };
+  }
+
+  function weekdayIndexFromLine(line) {
+    const token = String(line || "").trim().slice(0, 3).toLowerCase();
+    return ({ sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 })[token] ?? null;
+  }
+
+  function parsePdfDateHeading(line, monthContext, previousDate) {
+    const clean = normalizePdfLine(line);
+    const withoutWeekday = clean.replace(/^[A-Za-z]{3,12}\s*,?\s*/i, "");
+    const match = withoutWeekday.match(/^(\d{1,2})\s*[,./-]?\s*([A-Za-z0-9]{2,5})\s*[,./-]?\s*(20\d{2})\b/i);
+    if (!match) return null;
+
+    const rawDay = Number(match[1]);
+    let monthIndex = fuzzyMonthIndex(match[2]);
+    if (monthIndex < 0 && monthContext?.month) monthIndex = monthContext.month - 1;
+    if (monthIndex < 0 || rawDay < 1 || rawDay > 31) return null;
+
+    let year = Number(match[3]);
+    if (monthContext?.year && monthContext?.month === monthIndex + 1 && Math.abs(year - monthContext.year) >= 1) {
+      year = monthContext.year;
+    }
+
+    let day = rawDay;
+    let candidate = new Date(Date.UTC(year, monthIndex, day));
+    if (candidate.getUTCMonth() !== monthIndex || candidate.getUTCDate() !== day) return null;
+
+    if (previousDate) {
+      const previous = new Date(`${previousDate}T00:00:00Z`);
+      if (candidate > previous && previous.getUTCFullYear() === year && previous.getUTCMonth() === monthIndex) {
+        const weekday = weekdayIndexFromLine(clean);
+        if (weekday != null) {
+          const plausible = [];
+          for (let d = 1; d <= previous.getUTCDate(); d++) {
+            const test = new Date(Date.UTC(year, monthIndex, d));
+            if (test.getUTCMonth() === monthIndex && test.getUTCDay() === weekday) plausible.push(d);
+          }
+          if (plausible.length) {
+            day = plausible.sort((a, b) => Math.abs(a - rawDay) - Math.abs(b - rawDay))[0];
+            candidate = new Date(Date.UTC(year, monthIndex, day));
+          }
+        }
+      }
+    }
+
+    return candidate.toISOString().slice(0, 10);
+  }
+
+  function parsePdfMoney(value) {
+    const numeric = Number(String(value || "").replace(/[\s,]/g, ""));
+    return Number.isFinite(numeric) ? Math.round(numeric * 100) / 100 : null;
+  }
+
+  function parsePdfAmountLine(line) {
+    const clean = normalizePdfLine(line);
+    const match = clean.match(/\b(S(?:G|6)D|[A-Z]{3})\s*([+\-]?)\s*([0-9][0-9,]*(?:\.\d{1,2})?)\s*$/i);
+    if (!match) return null;
+    const value = parsePdfMoney(match[3]);
+    if (value == null) return null;
+    return {
+      description: clean.slice(0, match.index).trim(),
+      currency: match[1].toUpperCase().replace("6", "G"),
+      amount: match[2] === "-" ? -Math.abs(value) : Math.abs(value)
+    };
+  }
+
+  function pdfSourceCode(line) {
+    const clean = normalizePdfLine(line).toUpperCase();
+    const match = clean.match(/\b(POS|ADV|ATINT|GR|ATM)\b\s*$/);
+    return match?.[1] || "";
+  }
+
+  function shouldIgnorePdfLine(line) {
+    const clean = normalizePdfLine(line);
+    return !clean ||
+      clean === "__PAGE_BREAK__" ||
+      /^Page\s+\d+\s+of\s+\d+$/i.test(clean) ||
+      /^Transaction Histor/i.test(clean) ||
+      /^My Account$/i.test(clean) ||
+      /^(DBS|POSB)\b/i.test(clean) ||
+      /^April\s+20\d{2}\s*-\s*October\s+20\d{2}$/i.test(clean) ||
+      /^Available Balance/i.test(clean) ||
+      /^Ledger Balance/i.test(clean) ||
+      /^Transactions\s*as\s*of/i.test(clean);
+  }
+
+  function extractPdfMetadata(lines, transactions) {
+    const cleanLines = lines.filter(line => line !== "__PAGE_BREAK__").map(normalizePdfLine);
+    let availableBalance = null;
+    let ledgerBalance = null;
+    let statementDate = null;
+
+    const balanceHeaderIndex = cleanLines.findIndex(line => /Available Balance/i.test(line) && /Ledger Balance/i.test(line));
+    if (balanceHeaderIndex >= 0) {
+      const block = cleanLines.slice(balanceHeaderIndex, balanceHeaderIndex + 4).join(" ");
+      const amounts = [...block.matchAll(/\bS(?:G|6)D\s*([0-9][0-9,]*(?:\.\d{1,2})?)/gi)].map(match => parsePdfMoney(match[1])).filter(value => value != null);
+      if (amounts.length >= 1) availableBalance = amounts[0];
+      if (amounts.length >= 2) ledgerBalance = amounts[1];
+      const dates = [...block.matchAll(/\b(\d{1,2})\s+([A-Za-z0-9]{2,5})\s+(20\d{2})\b/gi)]
+        .map(match => {
+          const monthIndex = fuzzyMonthIndex(match[2]);
+          if (monthIndex < 0) return null;
+          const date = new Date(Date.UTC(Number(match[3]), monthIndex, Number(match[1])));
+          return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+        })
+        .filter(Boolean)
+        .sort();
+      if (dates.length) statementDate = dates[dates.length - 1];
+    }
+
+    if (!statementDate && transactions.length) {
+      statementDate = transactions.map(transaction => transaction.date).filter(Boolean).sort().at(-1) || null;
+    }
+
+    return { availableBalance, ledgerBalance, statementDate, currency: "SGD" };
+  }
+
+  function pdfTextLinesToRows(lines, fileName = "Statement.pdf") {
+    const transactions = [];
+    let monthContext = null;
+    let currentDate = null;
+    let previousDate = null;
+    let pending = null;
+    let carryText = "";
+
+    const flushPending = () => {
+      if (!pending) return;
+      transactions.push(pending);
+      pending = null;
+    };
+
+    for (const rawLine of lines) {
+      const line = normalizePdfLine(rawLine);
+      if (!line) continue;
+      if (line === "__PAGE_BREAK__") {
+        flushPending();
+        carryText = "";
+        continue;
+      }
+
+      const monthHeading = parsePdfMonthHeading(line);
+      if (monthHeading) {
+        flushPending();
+        monthContext = monthHeading;
+        carryText = "";
+        continue;
+      }
+
+      const dateHeading = parsePdfDateHeading(line, monthContext, previousDate);
+      if (dateHeading) {
+        flushPending();
+        currentDate = dateHeading;
+        previousDate = dateHeading;
+        const d = new Date(`${dateHeading}T00:00:00Z`);
+        monthContext = { month: d.getUTCMonth() + 1, year: d.getUTCFullYear() };
+        carryText = "";
+        continue;
+      }
+
+      const amountLine = parsePdfAmountLine(line);
+      if (amountLine && currentDate) {
+        flushPending();
+        let description = amountLine.description;
+        if (description.length < 3 && carryText) description = carryText;
+        pending = {
+          date: currentDate,
+          description: description || "Transaction",
+          currency: amountLine.currency || "SGD",
+          amount: amountLine.amount,
+          sourceCode: ""
+        };
+        carryText = "";
+        continue;
+      }
+
+      if (pending) {
+        const sourceCode = pdfSourceCode(line);
+        if (sourceCode) {
+          pending.sourceCode = sourceCode;
+          flushPending();
+          continue;
+        }
+      }
+
+      if (!shouldIgnorePdfLine(line) && !/\bS(?:G|6)D\b/i.test(line)) {
+        carryText = line;
+      }
+    }
+    flushPending();
+
+    if (!transactions.length) return [];
+    const metadata = extractPdfMetadata(lines, transactions);
+    const rows = [
+      ["Statement as at", metadata.statementDate || ""],
+      ["Currency", metadata.currency],
+      ["Available Balance", metadata.availableBalance ?? ""],
+      ["Ledger Balance", metadata.ledgerBalance ?? ""],
+      ["Source", fileName],
+      [],
+      ["Transaction Date", "Statement Code", "Description", "Currency", "Debit Amount", "Credit Amount"]
+    ];
+
+    transactions.forEach(transaction => {
+      rows.push([
+        transaction.date,
+        transaction.sourceCode,
+        transaction.description,
+        transaction.currency,
+        transaction.amount < 0 ? Math.abs(transaction.amount) : "",
+        transaction.amount > 0 ? transaction.amount : ""
+      ]);
+    });
+    return rows;
   }
 
   function parseDelimited(text, delimiter) {
@@ -199,12 +649,15 @@
       const row = cleanRows[i];
       const rawDate = valueAt(row, dateCol);
       const rawDescription = valueAt(row, descCol);
-      const debit = parseAmount(valueAt(row, debitCol));
-      const credit = parseAmount(valueAt(row, creditCol));
+      // Bank exports are inconsistent about whether debit/credit columns carry
+      // their own sign. Treat each column as a magnitude and let the column
+      // itself determine direction so a negative debit cannot become a credit.
+      const debit = Math.abs(parseAmount(valueAt(row, debitCol)) || 0);
+      const credit = Math.abs(parseAmount(valueAt(row, creditCol)) || 0);
       if (!rawDate && !rawDescription && !debit && !credit) continue;
       const date = parseDateCell(rawDate);
       if (!date) continue;
-      const amount = roundMoney((credit || 0) - (debit || 0));
+      const amount = roundMoney(credit - debit);
       if (amount === 0) continue;
 
       const record = {
@@ -392,7 +845,21 @@
 
   function isReserveRecord(record) {
     const hay = `${record.rawDescription} ${record.supplementary} ${record.clientReference} ${record.additionalReference}`.toLowerCase();
-    return record.amount < 0 && (/other bank account/.test(hay) || /savings account/.test(hay) || /reserve account/.test(hay) || /\[.*bank account.*\]:ib/.test(hay));
+    const compactHay = hay.replace(/\s+/g, " ").trim();
+
+    // Spreadsheet exports often describe these explicitly as another/savings
+    // account. DBS/POSB PDF history instead emits rows such as
+    // "TRF FT260909... 272-198562-8:IB"; OCR may read IB as 1B. Those are
+    // the recurring base-account transfers that must not count as spending.
+    const pdfInterBankTransfer = /^trf\s+ft[0-9a-z]+.*:\s*[i1]b\b/i.test(compactHay);
+
+    return record.amount < 0 && (
+      /other bank account/.test(hay) ||
+      /savings account/.test(hay) ||
+      /reserve account/.test(hay) ||
+      /\[.*bank account.*\]:\s*[i1]b/.test(hay) ||
+      pdfInterBankTransfer
+    );
   }
 
   function extractNamedParty(text, direction) {
@@ -453,6 +920,7 @@
     importStatementFromRows,
     parseDelimited,
     parseDateCell,
-    parseAmount
+    parseAmount,
+    pdfTextLinesToRows
   };
 })();

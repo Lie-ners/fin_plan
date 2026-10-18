@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Log in | Flexible Finance Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-auth-mode="login">
+  <main class="auth-view">
+    <section class="auth-card entrance entrance-1" aria-labelledby="authTitle">
+      <div class="auth-brand">
+        <p class="eyebrow">Flexible finance tracker</p>
+        <h1 id="authTitle">Welcome back</h1>
+        <p class="subhead">Log in to access your saved transactions, budget plan, and saving goals.</p>
+      </div>
+
+      <form id="authForm" class="auth-form">
+        <label>Email
+          <input id="authEmail" type="email" autocomplete="email" required placeholder="you@example.com" />
+        </label>
+        <label>Password
+          <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required placeholder="Your password" />
+        </label>
+        <p id="authMessage" class="auth-message" role="status" hidden></p>
+        <button class="button primary full-width" type="submit">Log in</button>
+      </form>
+
+      <p class="auth-switch">New here? <a href="signup.html">Create an account</a></p>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="auth.js"></script>
+</body>
+</html>

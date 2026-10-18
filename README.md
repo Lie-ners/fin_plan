@@ -6,16 +6,18 @@ The app is designed for people who want a clearer view of their money without ha
 
 ## What you can do
 
-- Create an account and keep your finance data available across sessions.
-- Import a bank statement from `.xlsx`, `.csv`, or `.tsv`.
+- Create an account with a unique username and keep your finance data available across sessions.
+- Open your account panel from the dashboard to change your username, email, password, or delete your account.
+- Import a bank statement from PDF, `.xlsx`, `.csv`, or `.tsv`.
 - Mask account numbers, names, card fragments, or other sensitive text before imported data is saved.
 - Add transactions manually whenever needed.
+- Clear imported statement data without deleting manual transactions, savings goals, or your budget plan.
 - View your finances across one month, several months, or your full saved history.
 - Track income, spending, reserve transfers, and remaining spending allowance.
 - Build a custom paycheck allocation plan using your own percentages and categories.
 - Use starter budget presets such as 50/30/20 or create your own structure.
 - Create savings goals and track progress over time.
-- Preview your latest imported spreadsheet and export a simplified CSV of your transactions.
+- Preview your latest imported statement data and export a simplified CSV of your transactions.
 
 ## Savings goals
 
@@ -80,23 +82,32 @@ You can update the saved amount at any time and the dashboard will show your pro
 
 Use **Add transaction** when you need to record something that was not included in an imported statement. Manual transactions are saved to your account and included in your dashboard totals.
 
+### Account settings
+
+Tap your account badge in the dashboard header to open the account panel. Each account has a permanent Supabase Auth UUID shown as its **Account ID**. From the panel you can change your unique username, request an email change, update your password, sign out from the main dashboard, or permanently delete your account.
+
+Usernames are unique without regard to letter case, so `Linus`, `linus`, and `LINUS` cannot belong to different accounts.
+
+Deleting an account also deletes finance records tied to that Supabase Auth user through the database's cascading foreign keys. Account deletion is irreversible.
+
 ## Statement imports
 
 Supported formats:
 
+- PDF `.pdf` — including image-only statements that require on-device OCR
 - Excel `.xlsx`
 - CSV `.csv`
 - TSV `.tsv`
 
-The importer looks for a transaction table containing common fields such as transaction date, description, debit amount, credit amount, currency, and statement code.
+For spreadsheets, the importer looks for a transaction table containing common fields such as transaction date, description, debit amount, credit amount, currency, and statement code. For PDFs, it first uses any embedded text and falls back to on-device OCR for image-based bank statements.
 
-You can import additional statements later using **Import statement** on the dashboard.
+You can import additional statements later using **Import statement** on the dashboard. Overlapping statement periods are compared with your existing imported history so matching transactions are skipped.
 
-> When importing overlapping statement periods, check your transaction history carefully. Importing the same transactions more than once may currently create duplicates.
+If an older import left you with duplicated or unwanted statement data, use **Clear imported data** in the Imported statement data panel. This removes statement-derived transactions and saved statement snapshots while keeping transactions you added manually, saving goals, and your budget plan.
 
 ## Privacy and data storage
 
-The original statement file itself is not uploaded by the app.
+The original statement file itself is not uploaded by the app. PDF OCR, when needed, runs in the browser on the user's device.
 
 Your browser reads the file first, applies any masking rules you entered, and converts it into parsed transaction and statement data. The parsed, masked data is then saved to Supabase so it remains available when you sign out, close the browser, or use another device.
 
@@ -121,7 +132,8 @@ The **Simplify & export** button downloads your saved transactions as a CSV cont
 
 - Transaction categorisation is based on rules and may not always classify a merchant correctly.
 - Imported statement layouts vary between banks, so some exports may need adjustment before they can be recognised.
-- Importing overlapping statements can result in duplicate transactions.
+- Image-only PDFs use on-device OCR, so long statements can take noticeably longer to import on older phones.
+- Overlapping statement imports are checked against existing imported transactions so matching rows are skipped instead of being counted twice.
 - Saving-goal progress is updated manually and is not automatically linked to a separate bank or investment account.
 - This is a personal finance tracking tool, not financial advice.
 
@@ -136,10 +148,28 @@ Main files:
 - `console.html` — finance dashboard
 - `auth.js` — sign-up and login behaviour
 - `data.js` — Supabase data access
-- `parser.js` — Excel/CSV/TSV parsing and masking
+- `parser.js` — PDF/Excel/CSV/TSV parsing, on-device PDF OCR, and masking
 - `upload.js` — statement import flow
 - `console.js` — dashboard behaviour
 - `styles.css` — application styling
-- `supabase-schema.sql` — database tables and Row Level Security policies
+- `supabase-schema.sql` — database tables, unique account profiles, and Row Level Security policies
+- `supabase-username-migration.sql` — one-time migration for existing projects to add unique usernames and profile rows
+- `supabase/functions/delete-account/index.ts` — authenticated server-side account deletion function
 
 For a new Supabase project, run `supabase-schema.sql` in the Supabase SQL Editor and configure the browser-safe project URL and publishable key in `supabase-config.js`. Never place a Supabase secret or service-role key in this repository.
+
+For an **existing** Finance Tracker project, run `supabase-username-migration.sql` once before deploying the updated frontend. It creates the `profiles` table, backfills current Auth users, resolves any pre-existing duplicate usernames, and adds the case-insensitive unique username constraint. Existing finance records already use each Supabase Auth user UUID as their `user_id`, so transaction ownership does not need to be migrated.
+
+### Deploy the account-deletion function
+
+Changing usernames, email addresses, and passwords uses the signed-in Supabase client. Permanently deleting an Auth user requires privileged server-side access, so the browser calls the included `delete-account` Supabase Edge Function instead of exposing a secret key.
+
+Deploy it once to the same Supabase project used by the site. With the Supabase CLI linked to your project:
+
+```bash
+supabase functions deploy delete-account
+```
+
+You can also create/deploy the function from **Supabase Dashboard → Edge Functions** by using the contents of `supabase/functions/delete-account/index.ts`. Keep the function authenticated; it is intended to be called only by signed-in users.
+
+The unique-username update does require the profile migration above. The account-deletion Edge Function does not require an additional database schema change.
