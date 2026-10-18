@@ -49,7 +49,7 @@
     try {
       if (mode === "signup") {
         const displayName = $("displayName")?.value.trim() || "";
-        const redirectUrl = new URL("login.html", location.href).href;
+        const redirectUrl = new URL("index.html", location.href).href;
         const { data, error } = await window.financeSupabase.auth.signUp({
           email,
           password,
@@ -60,7 +60,7 @@
         });
         if (error) throw error;
         if (data.session) {
-          location.replace("index.html");
+          location.replace("import.html");
         } else {
           setMessage("Account created. Check your email to confirm your address, then sign in.");
           form.reset();

@@ -10,7 +10,7 @@
 
   function loginUrl() {
     const current = `${location.pathname.split("/").pop() || "index.html"}${location.search || ""}`;
-    return `login.html?returnTo=${encodeURIComponent(current)}`;
+    return `index.html?returnTo=${encodeURIComponent(current)}`;
   }
 
   async function currentUser() {
@@ -261,7 +261,7 @@
   async function signOut() {
     const { error } = await client().auth.signOut();
     if (error) throw error;
-    location.replace("login.html");
+    location.replace("index.html");
   }
 
   window.FinanceData = {

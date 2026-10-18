@@ -764,7 +764,7 @@
       }
 
       if (!state.transactions.length && !state.statement) {
-        location.replace("index.html");
+        location.replace("import.html");
         return;
       }
 
@@ -801,7 +801,7 @@
     flashRefresh();
   });
 
-  $("importStatementBtn").addEventListener("click", () => { location.href = "index.html?import=1"; });
+  $("importStatementBtn").addEventListener("click", () => { location.href = "import.html?import=1"; });
   $("signOutBtn").addEventListener("click", () => window.FinanceData.signOut());
   $("simplifyExportBtn").addEventListener("click", exportSimplifiedTransactions);
 

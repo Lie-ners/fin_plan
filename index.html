@@ -4,74 +4,35 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" />
-  <title>Import Statement | Flexible Finance Tracker</title>
+  <title>Log in | Flexible Finance Tracker</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
-  <input id="statementUpload" class="visually-hidden" type="file" accept=".xlsx,.csv,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-
-  <section class="upload-view" aria-labelledby="uploadTitle">
-    <div class="upload-card entrance entrance-1">
-      <div class="account-strip">
-        <div>
-          <p class="eyebrow">Account import</p>
-          <span id="accountName" class="muted small">Checking account…</span>
-        </div>
-        <div class="account-actions">
-          <a id="dashboardLink" class="button ghost" href="console.html" hidden>Dashboard</a>
-          <button id="signOutBtn" class="button ghost" type="button">Sign out</button>
-        </div>
+<body data-auth-mode="login">
+  <main class="auth-view">
+    <section class="auth-card entrance entrance-1" aria-labelledby="authTitle">
+      <div class="auth-brand">
+        <p class="eyebrow">Flexible finance tracker</p>
+        <h1 id="authTitle">Welcome back</h1>
+        <p class="subhead">Log in to access your saved transactions, budget plan, and saving goals.</p>
       </div>
 
-      <h1 id="uploadTitle">Import your bank statement</h1>
-      <p class="subhead">Import once and your masked transactions will be saved to your account. After that, you can log back in at any time and keep adding transactions manually without uploading the same file again.</p>
-
-      <section class="mask-card setup-step" aria-labelledby="maskTitle">
-        <div class="mask-card-heading">
-          <div>
-            <p class="eyebrow">Step 1 · Optional masking</p>
-            <h2 id="maskTitle">Hide sensitive details before saving</h2>
-          </div>
-          <button id="addMaskBtn" class="button ghost" type="button">Add another</button>
-        </div>
-        <p class="muted small">Mask account numbers, card fragments, names, or references before anything is saved to Supabase. The raw workbook itself is not uploaded; the browser parses it first, applies these replacements, then saves the masked result.</p>
-        <div id="maskRows" class="mask-rows"></div>
-      </section>
-
-      <section class="upload-step setup-step" aria-labelledby="importTitle">
-        <div class="upload-step-heading">
-          <div>
-            <p class="eyebrow">Step 2 · Import statement</p>
-            <h2 id="importTitle">Choose your bank statement</h2>
-          </div>
-          <span class="file-type-badge">XLSX · CSV · TSV</span>
-        </div>
-        <label id="dropZone" class="drop-zone" for="statementUpload">
-          <span class="upload-icon" aria-hidden="true">↥</span>
-          <strong>Choose or drop your statement here</strong>
-          <small>Your masking rules are applied before the parsed data is saved</small>
+      <form id="authForm" class="auth-form">
+        <label>Email
+          <input id="authEmail" type="email" autocomplete="email" required placeholder="you@example.com" />
         </label>
-      </section>
+        <label>Password
+          <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required placeholder="Your password" />
+        </label>
+        <p id="authMessage" class="auth-message" role="status" hidden></p>
+        <button class="button primary full-width" type="submit">Log in</button>
+      </form>
 
-      <div class="privacy-note">
-        <strong>Account-backed storage.</strong> Parsed, masked transaction data is stored in your Supabase account so it remains available after you close the browser. Access is restricted to your signed-in user through database Row Level Security.
-      </div>
-
-      <button id="continueSessionBtn" class="button primary full-width" type="button" hidden>Continue to dashboard</button>
-
-      <details class="help-card">
-        <summary>Expected columns</summary>
-        <p>The importer looks for a transaction table with columns like Transaction Date, Statement Code, Description, Currency, Debit Amount, and Credit Amount.</p>
-      </details>
-
-      <p id="uploadError" class="error" role="alert" hidden></p>
-    </div>
-  </section>
+      <p class="auth-switch">New here? <a href="signup.html">Create an account</a></p>
+    </section>
+  </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>
-  <script src="data.js"></script>
-  <script src="parser.js"></script>
-  <script src="upload.js"></script>
+  <script src="auth.js"></script>
 </body>
 </html>
