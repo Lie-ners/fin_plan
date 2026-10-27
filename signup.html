@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="color-scheme" content="dark" />
+  <meta name="color-scheme" content="dark light" />
   <title>Create account | Flexible Finance Tracker</title>
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-auth-mode="signup">
@@ -13,13 +14,13 @@
       <div class="auth-brand">
         <p class="eyebrow">Flexible finance tracker</p>
         <h1 id="authTitle">Create your account</h1>
-        <p class="subhead">Your account keeps transactions, allocation settings, and saving goals available across sessions and devices.</p>
+        <p class="subhead">Save your finances and goals across devices.</p>
       </div>
 
       <form id="authForm" class="auth-form">
         <label>Username
           <input id="displayName" type="text" autocomplete="nickname" minlength="2" maxlength="40" required placeholder="e.g. iliketohuntxmm69" />
-          <small class="field-hint">Usernames are unique and are not case-sensitive.</small>
+          <small class="field-hint">Unique, not case-sensitive.</small>
         </label>
         <label>Email
           <input id="authEmail" type="email" autocomplete="email" required placeholder="you@example.com" />
@@ -32,6 +33,7 @@
       </form>
 
       <p class="auth-switch">Already have an account? <a href="index.html">Log in</a></p>
+      <p class="auth-switch">Want a preview? <a href="demo.html">View demo</a></p>
     </section>
   </main>
 

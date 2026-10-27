@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="color-scheme" content="dark" />
+  <meta name="color-scheme" content="dark light" />
   <title>Finance Console | Flexible Finance Tracker</title>
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -13,7 +14,7 @@
       <div class="dashboard-title-block">
         <p class="eyebrow">Flexible finance tracker</p>
         <h1>Personal Finance Dashboard</h1>
-        <p class="dashboard-greeting">Welcome back, <strong id="userName">—</strong>. Here’s your financial snapshot.</p>
+        <p class="dashboard-greeting">Welcome, <strong id="userName">—</strong>.</p>
       </div>
 
       <div class="dashboard-hero-side">
@@ -26,7 +27,8 @@
           <span class="account-chip-chevron" aria-hidden="true">›</span>
         </button>
         <div class="dashboard-primary-actions">
-          <button id="importStatementBtn" class="button ghost" type="button">Import statement</button>
+          <button id="importStatementBtn" class="button ghost" type="button">Import</button>
+          <button id="clearStatementTopBtn" class="button ghost danger-button" type="button">Clear statement</button>
           <button id="addTransactionBtn" class="button primary" type="button">Add transaction</button>
           <button id="signOutBtn" class="button ghost subtle-action" type="button">Sign out</button>
         </div>
@@ -36,7 +38,7 @@
     <section class="dashboard-toolbar entrance entrance-2" aria-label="Dashboard controls">
       <div class="toolbar-copy">
         <span class="toolbar-kicker">Viewing period</span>
-        <strong>Choose the months included in your dashboard</strong>
+        <strong>Choose a date range</strong>
       </div>
       <div class="period-range" aria-label="Finance date range">
         <label><span>From</span><input id="periodFrom" type="month" /></label>
@@ -48,7 +50,7 @@
 
     <section class="privacy-note entrance entrance-2 account-note">
       <span class="sync-dot" aria-hidden="true"></span>
-      <span><strong>Account synced.</strong> Masked finance data is stored with your account; the original statement file is never uploaded.</span>
+      <span><strong>Synced.</strong> Your original statement file is not uploaded.</span>
     </section>
 
     <section class="statement-strip entrance entrance-3" aria-label="Statement details">
@@ -72,12 +74,12 @@
         <article class="kpi">
           <span class="kpi-label">Actual spending</span>
           <strong id="spendingKpi">S$0.00</strong>
-          <small>Reserve transfers excluded</small>
+          <small>Savings transfers excluded</small>
         </article>
         <article class="kpi">
           <span class="kpi-label">Reserve moved out</span>
           <strong id="reserveKpi">S$0.00</strong>
-          <small id="reserveHint">Compared with non-spendable targets</small>
+          <small id="reserveHint">Transfers to defined savings account</small>
         </article>
       </section>
 
@@ -92,14 +94,14 @@
           </div>
           <div id="allocationBar" class="allocation-bar" aria-label="Budget allocation"></div>
           <div id="allocationCards" class="allocation-cards"></div>
-          <p class="muted small">Categories marked as spendable are combined into the spending allowance. Other categories are targets for savings, investing, debt, goals, or anything else you create.</p>
+          <p class="muted small">Spendable categories form your allowance. The rest are set-aside targets.</p>
         </article>
 
         <article class="panel progress-panel">
           <div class="panel-heading">
             <div>
               <p class="eyebrow">Allowance usage</p>
-              <h2>How much of your spendable allocation is used?</h2>
+              <h2>Spendable allocation used</h2>
             </div>
             <span id="usageBadge" class="badge">0%</span>
           </div>
@@ -122,7 +124,7 @@
           <div>
             <p class="eyebrow">Saving goals</p>
             <h2 id="goalsTitle">What are you saving for?</h2>
-            <p class="muted small goal-help">Track goals separately from transaction categories—for example a car under Vehicle, or a PS5 under Electronics &amp; Gaming.</p>
+            <p class="muted small goal-help">Track what you are saving for.</p>
           </div>
           <button id="addGoalBtn" class="button primary" type="button">Add goal</button>
         </div>
@@ -133,7 +135,7 @@
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Trend</p>
-            <h2>Allowance vs spending across your selected months</h2>
+            <h2>Allowance vs spending</h2>
           </div>
           <span id="periodSummary" class="badge">—</span>
         </div>
@@ -142,7 +144,7 @@
 
       <section class="panel paychecks-panel entrance entrance-7">
         <div class="panel-heading">
-          <div><p class="eyebrow">Paycheck planner</p><h2>Detected payroll and target allocation</h2></div>
+          <div><p class="eyebrow">Paycheck planner</p><h2>Payroll and allocation</h2></div>
           <span id="paycheckCount" class="muted"></span>
         </div>
         <div class="table-scroll paycheck-scroll">
@@ -158,11 +160,11 @@
           <div>
             <p class="eyebrow">Latest source statement</p>
             <h2 id="sheetViewerTitle">Imported statement data</h2>
-            <p class="muted small sheet-help">The most recently imported masked statement data is shown here. PDF imports are converted into a structured transaction table; manual transactions are overlaid where possible. Simplify &amp; export downloads all saved transactions as a clean Excel-compatible CSV.</p>
+            <p class="muted small sheet-help">Preview the latest masked statement or export your transactions.</p>
           </div>
           <div class="sheet-heading-actions">
             <span id="sheetDimensions" class="badge sheet-badge">—</span>
-            <button id="clearImportedBtn" class="button ghost danger-button" type="button" title="Delete imported statement transactions while keeping manual entries, goals, and budget settings">Clear imported data</button>
+            <button id="clearImportedBtn" class="button ghost danger-button" type="button" title="Delete imported statement transactions while keeping manual entries, goals, and budget settings">Clear statement</button>
             <button id="simplifyExportBtn" class="button primary sheet-export-button" type="button">Simplify &amp; export</button>
           </div>
         </div>
@@ -184,7 +186,7 @@
       <div>
         <p class="eyebrow">Account</p>
         <h2 id="accountPanelTitle">Profile &amp; security</h2>
-        <p class="muted small">Manage how you sign in and how your name appears in the app.</p>
+        <p class="muted small">Manage your account and appearance.</p>
       </div>
       <button id="accountPanelClose" class="icon-button" type="button" aria-label="Close account settings">×</button>
     </div>
@@ -194,7 +196,7 @@
         <div class="account-settings-heading">
           <div>
             <h3>Account ID</h3>
-            <p class="muted small">Your unique Supabase user ID. It identifies this account even if your username or email changes.</p>
+            <p class="muted small">Permanent account identifier.</p>
           </div>
         </div>
         <label class="account-id-field">Account ID
@@ -202,11 +204,24 @@
         </label>
       </section>
 
+      <section class="account-settings-section account-appearance-section">
+        <div class="account-settings-heading">
+          <div>
+            <h3>Appearance</h3>
+            <p class="muted small">Choose dark or bright mode.</p>
+          </div>
+        </div>
+        <label class="theme-switch-row" for="themeToggle">
+          <span>Bright theme</span>
+          <input id="themeToggle" type="checkbox" role="switch" aria-label="Use bright theme" />
+        </label>
+      </section>
+
       <section class="account-settings-section">
         <div class="account-settings-heading">
           <div>
             <h3>Username</h3>
-            <p class="muted small">Usernames are unique and case-insensitive. Shown on your dashboard and import screen.</p>
+            <p class="muted small">Unique, not case-sensitive.</p>
           </div>
         </div>
         <form id="usernameForm" class="account-settings-form">
@@ -222,7 +237,7 @@
         <div class="account-settings-heading">
           <div>
             <h3>Email address</h3>
-            <p class="muted small">Supabase may ask you to confirm the change by email.</p>
+            <p class="muted small">You may need to confirm by email.</p>
           </div>
         </div>
         <form id="emailForm" class="account-settings-form">
@@ -238,7 +253,7 @@
         <div class="account-settings-heading">
           <div>
             <h3>Password</h3>
-            <p class="muted small">Use at least 8 characters. Your current password may be required by your Supabase security settings.</p>
+            <p class="muted small">Use at least 8 characters.</p>
           </div>
         </div>
         <form id="passwordForm" class="account-settings-form">
@@ -261,7 +276,7 @@
           <div>
             <p class="eyebrow danger-eyebrow">Danger zone</p>
             <h3>Delete account</h3>
-            <p class="muted small">Permanently deletes your login and all finance data tied to this account, including imported and manual transactions, statements, goals, and budget settings.</p>
+            <p class="muted small">Deletes your account and all saved finance data. This cannot be undone.</p>
           </div>
         </div>
         <form id="deleteAccountForm" class="account-settings-form">
@@ -290,7 +305,7 @@
         <label>Amount (SGD) <input id="newAmount" type="number" min="0.01" step="0.01" required /></label>
       </div>
       <label>Category <select id="newCategory"></select></label>
-      <p class="muted small dialog-note">Manual entries are saved directly to your account and remain available the next time you log in.</p>
+      <p class="muted small dialog-note">Saved to your account.</p>
       <p id="transactionError" class="error" hidden></p>
       <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog>Cancel</button><button class="button primary" type="submit">Add</button></div>
     </form>
@@ -325,7 +340,7 @@
       </div>
       <input id="goalProgressId" type="hidden" />
       <label>Total saved so far <input id="goalProgressAmount" type="number" min="0" step="0.01" required /></label>
-      <p class="muted small">Enter the total amount currently assigned to this goal.</p>
+      <p class="muted small">Enter the total saved amount.</p>
       <p id="goalProgressError" class="error" hidden></p>
       <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog>Cancel</button><button class="button primary" type="submit">Save progress</button></div>
     </form>
@@ -341,7 +356,7 @@
         <div class="preset-heading">
           <div>
             <h3 id="presetHeading">Not sure where to start?</h3>
-            <p class="muted small">Apply a common budgeting framework, then rename, add, remove, or rebalance categories however you like.</p>
+            <p class="muted small">Start with a preset, then edit it.</p>
           </div>
         </div>
         <div id="presetGrid" class="preset-grid"></div>
@@ -349,7 +364,7 @@
       <div class="allocation-editor-heading">
         <div>
           <h3>Your categories</h3>
-          <p class="muted small">Spendable categories contribute to the allowance that is compared with actual statement spending.</p>
+          <p class="muted small">Spendable categories form your spending allowance.</p>
         </div>
         <button id="addAllocationBtn" type="button" class="button ghost">Add category</button>
       </div>

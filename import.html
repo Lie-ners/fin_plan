@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="color-scheme" content="dark" />
+  <meta name="color-scheme" content="dark light" />
   <title>Import Statement | Flexible Finance Tracker</title>
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -24,21 +25,50 @@
       </div>
 
       <h1 id="uploadTitle">Import your bank statement</h1>
-      <p class="subhead">Import a statement from your banking app or computer and your masked transactions will be saved to your account. PDF statements are read on your device; image-only PDFs are OCRed in the browser before anything is saved.</p>
+      <p class="subhead">Define your accounts, then choose a statement. Your file stays on this device.</p>
 
-      <section class="mask-card setup-step" aria-labelledby="maskTitle">
+      <section class="mask-card setup-step" aria-labelledby="bankAccountsTitle">
         <div class="mask-card-heading">
           <div>
-            <p class="eyebrow">Step 1 · Optional masking</p>
-            <h2 id="maskTitle">Hide sensitive details before saving</h2>
+            <p class="eyebrow">Step 1 · Define bank accounts</p>
+            <h2 id="bankAccountsTitle">Define your bank accounts</h2>
           </div>
-          <button id="addMaskBtn" class="button ghost" type="button">Add another</button>
         </div>
-        <p class="muted small">Mask account numbers, card fragments, names, or references before anything is saved to Supabase. The original statement file is not uploaded; your browser reads it first, applies these replacements, then saves only the parsed masked result.</p>
-        <div id="maskRows" class="mask-rows"></div>
+        <p class="muted small">Add a savings account to detect reserve transfers. Leave it blank and transfers count as expenses.</p>
+
+        <div class="bank-account-grid">
+          <label class="account-definition-field">
+            <span>Main account <small>Optional</small></span>
+            <input id="mainAccountIdentifier" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 123-456789-0" />
+            <small>Masked as <strong>[Main Account]</strong> when found.</small>
+          </label>
+          <label class="account-definition-field savings-definition-field">
+            <span>Savings account <small>Optional</small></span>
+            <input id="savingsAccountIdentifier" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 987-654321-0" />
+            <small>Matching outgoing transfers count as reserves, not spending.</small>
+          </label>
+        </div>
+
+        <div class="account-definition-caveat">
+          <strong>Note:</strong> Reserve detection only works when the statement includes the savings identifier. Otherwise, the debit counts as an expense.
+        </div>
+
+        <div class="mask-subsection">
+          <div class="mask-subheading">
+            <div>
+              <p class="eyebrow">Optional privacy masking</p>
+              <h3>Mask other details</h3>
+            </div>
+            <button id="addMaskBtn" class="button ghost" type="button">Add mask rule</button>
+          </div>
+          <p class="muted small">Account identifiers are masked automatically. Add extra rules for names, card fragments, or references. <strong>Only matching text is hidden, so review what you save.</strong></p>
+          <div id="maskRows" class="mask-rows"></div>
+        </div>
+
+        <button id="proceedImportBtn" class="button primary full-width setup-proceed-button" type="button">Proceed</button>
       </section>
 
-      <section class="upload-step setup-step" aria-labelledby="importTitle">
+      <section id="importStep" class="upload-step setup-step" aria-labelledby="importTitle" hidden>
         <div class="upload-step-heading">
           <div>
             <p class="eyebrow">Step 2 · Import statement</p>
@@ -49,7 +79,7 @@
         <label id="dropZone" class="drop-zone" for="statementUpload">
           <span class="upload-icon" aria-hidden="true">↥</span>
           <strong>Choose your statement</strong>
-          <small>On mobile, select the PDF downloaded from your banking app. You can also use XLSX, CSV, or TSV.</small>
+          <small>PDF, XLSX, CSV, or TSV.</small>
         </label>
       </section>
 
@@ -63,14 +93,14 @@
       </div>
 
       <div class="privacy-note">
-        <strong>Account-backed storage.</strong> Parsed, masked transaction data is stored in your Supabase account so it remains available after you close the browser. Access is restricted to your signed-in user through database Row Level Security.
+        <strong>Private account storage.</strong> Only parsed, masked data is saved to your account.
       </div>
 
       <button id="continueSessionBtn" class="button primary full-width" type="button" hidden>Continue to dashboard</button>
 
       <details class="help-card">
         <summary>Supported statement formats</summary>
-        <p>PDF statements from supported bank layouts can be read directly, including image-only PDFs using on-device OCR. Spreadsheet imports look for columns such as Transaction Date, Description, Debit Amount, Credit Amount, Currency, and Statement Code.</p>
+        <p>Supports PDF, XLSX, CSV, and TSV. Image-only PDFs use on-device OCR. Reserve transfers require a matching savings-account identifier.</p>
       </details>
 
       <p id="uploadError" class="error" role="alert" hidden></p>

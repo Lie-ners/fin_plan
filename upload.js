@@ -6,6 +6,10 @@
   const dropZone = $("dropZone");
   const maskRows = $("maskRows");
   const addMaskBtn = $("addMaskBtn");
+  const mainAccountIdentifier = $("mainAccountIdentifier");
+  const savingsAccountIdentifier = $("savingsAccountIdentifier");
+  const proceedImportBtn = $("proceedImportBtn");
+  const importStep = $("importStep");
   const continueBtn = $("continueSessionBtn");
   const dashboardLink = $("dashboardLink");
   const signOutBtn = $("signOutBtn");
@@ -44,18 +48,15 @@
     const row = document.createElement("div");
     row.className = "mask-row";
     row.innerHTML = `
-      <label>Sensitive text or account number
-        <input class="mask-needle" type="text" autocomplete="off" placeholder="e.g. 123-456789-0" value="${escapeAttr(needle)}" />
+      <label>Text to hide
+        <input class="mask-needle" type="text" autocomplete="off" placeholder="e.g. card fragment or name" value="${escapeAttr(needle)}" />
       </label>
-      <label>Show as
-        <input class="mask-replacement" type="text" autocomplete="off" placeholder="e.g. [Bank Account]" value="${escapeAttr(replacement)}" />
+      <label>Replace with
+        <input class="mask-replacement" type="text" autocomplete="off" placeholder="e.g. [Card]" value="${escapeAttr(replacement)}" />
       </label>
       <button class="icon-button mask-remove" type="button" aria-label="Remove mask rule">×</button>
     `;
-    row.querySelector(".mask-remove").addEventListener("click", () => {
-      row.remove();
-      if (!maskRows.children.length) addMaskRow();
-    });
+    row.querySelector(".mask-remove").addEventListener("click", () => row.remove());
     maskRows.appendChild(row);
   }
 
@@ -63,13 +64,55 @@
     createMaskRow("", "");
   }
 
-  function getMaskRules() {
-    return Array.from(maskRows.querySelectorAll(".mask-row"))
+  function normalizeAccountIdentifier(value) {
+    return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  function getAccountDefinitions() {
+    const mainAccount = mainAccountIdentifier?.value.trim() || "";
+    const savingsAccount = savingsAccountIdentifier?.value.trim() || "";
+    const normalizedMain = normalizeAccountIdentifier(mainAccount);
+    const normalizedSavings = normalizeAccountIdentifier(savingsAccount);
+
+    if (mainAccount && normalizedMain.length < 4) {
+      throw new Error("Main account identifier is too short. Enter at least 4 letters or digits, or leave it blank.");
+    }
+    if (savingsAccount && normalizedSavings.length < 4) {
+      throw new Error("Savings account identifier is too short. Enter at least 4 letters or digits, or leave it blank.");
+    }
+    if (normalizedMain && normalizedSavings && normalizedMain === normalizedSavings) {
+      throw new Error("Main account and savings account identifiers must be different.");
+    }
+
+    return { mainAccount, savingsAccount };
+  }
+
+  function getMaskRules(accountDefinitions) {
+    const rules = [];
+    if (accountDefinitions.mainAccount) {
+      rules.push({
+        needle: accountDefinitions.mainAccount,
+        replacement: "[Main Account]",
+        matchMode: "account"
+      });
+    }
+    if (accountDefinitions.savingsAccount) {
+      rules.push({
+        needle: accountDefinitions.savingsAccount,
+        replacement: "[Savings Account]",
+        matchMode: "account"
+      });
+    }
+
+    rules.push(...Array.from(maskRows.querySelectorAll(".mask-row"))
       .map(row => ({
         needle: row.querySelector(".mask-needle")?.value.trim() || "",
-        replacement: row.querySelector(".mask-replacement")?.value.trim() || ""
+        replacement: row.querySelector(".mask-replacement")?.value.trim() || "",
+        matchMode: "exact"
       }))
-      .filter(rule => rule.needle && rule.replacement);
+      .filter(rule => rule.needle && rule.replacement));
+
+    return rules;
   }
 
   function escapeHtml(value) {
@@ -85,7 +128,8 @@
 
     try {
       const { readStatementRows, importStatementFromRows } = window.FinanceStatementParser;
-      const maskRules = getMaskRules();
+      const accountDefinitions = getAccountDefinitions();
+      const maskRules = getMaskRules(accountDefinitions);
       setImportProgress({
         progress: 0.02,
         message: `Opening ${file.name}`,
@@ -97,17 +141,27 @@
       setImportProgress({
         progress: 0.94,
         message: "Organising transactions…",
-        detail: "Applying your masking rules and preparing the statement for your account."
+        detail: accountDefinitions.savingsAccount
+          ? "Matching transfers to your defined savings account, then applying masking rules."
+          : "No savings account was defined, so debits will be treated as spending unless another rule categorises them."
       });
-      const imported = importStatementFromRows(rows, file.name, maskRules);
+      const imported = importStatementFromRows(rows, file.name, {
+        maskRules,
+        accountDefinitions
+      });
       if (!imported.transactions.length) {
         throw new Error("No transactions were found. This statement layout may not be supported yet.");
       }
-      imported.maskRules = maskRules;
+      // Do not persist the raw account identifiers or masking needles. They are
+      // used only during this import; only already-masked rows/transactions are saved.
+      imported.maskRules = [];
+      const reserveCount = Number(imported.accountDetection?.reserveTransferCount || 0);
       setImportProgress({
         progress: 0.97,
         message: "Saving to your account…",
-        detail: `${imported.transactions.length} transactions found.`
+        detail: accountDefinitions.savingsAccount
+          ? `${imported.transactions.length} transactions found · ${reserveCount} savings transfer${reserveCount === 1 ? "" : "s"} detected.`
+          : `${imported.transactions.length} transactions found · savings detection not enabled.`
       });
       await window.FinanceData.importStatement(imported);
       setImportProgress({
@@ -126,9 +180,27 @@
     }
   }
 
+  function proceedToImport() {
+    try {
+      getAccountDefinitions();
+      setUploadError("");
+      importStep.hidden = false;
+      proceedImportBtn.textContent = "Ready";
+      proceedImportBtn.classList.add("is-complete");
+      importStep.scrollIntoView({ behavior: "smooth", block: "start" });
+      window.setTimeout(() => { proceedImportBtn.textContent = "Proceed"; }, 1200);
+    } catch (error) {
+      setUploadError(error?.message || "Check your account details.");
+    }
+  }
+
   async function init() {
     try {
       const { user, profile } = await window.FinanceData.getAccountIdentity();
+      const savedTheme = String(user?.user_metadata?.theme || "").toLowerCase();
+      if ((savedTheme === "dark" || savedTheme === "light") && window.FinanceTheme) {
+        window.FinanceTheme.apply(savedTheme);
+      }
       const accountName = String(profile?.username || user.user_metadata?.username || user.user_metadata?.display_name || "").trim() || String(user.email || "").split("@")[0] || "User";
       $("accountName").textContent = accountName;
       const hasData = await window.FinanceData.hasTransactions();
@@ -160,10 +232,9 @@
     handleFile(event.dataTransfer.files?.[0]);
   });
   addMaskBtn.addEventListener("click", addMaskRow);
+  proceedImportBtn.addEventListener("click", proceedToImport);
   continueBtn.addEventListener("click", () => { window.location.href = "console.html"; });
   signOutBtn.addEventListener("click", () => window.FinanceData.signOut());
 
-  createMaskRow("", "[Bank Account]");
-  createMaskRow("", "[Savings Account]");
   init();
 })();

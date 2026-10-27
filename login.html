@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="dark" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark light" />
   <title>Log in | Flexible Finance Tracker</title>
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body data-auth-mode="login">
@@ -13,12 +14,12 @@
       <div class="auth-brand">
         <p class="eyebrow">Flexible finance tracker</p>
         <h1 id="authTitle">Welcome back</h1>
-        <p class="subhead">Log in to access your saved transactions, budget plan, and saving goals.</p>
+        <p class="subhead">View your saved finances and goals.</p>
       </div>
 
       <form id="authForm" class="auth-form">
-        <label>Email
-          <input id="authEmail" type="email" autocomplete="email" required placeholder="you@example.com" />
+        <label>Username
+          <input id="authUsername" type="text" autocomplete="username" maxlength="40" required placeholder="Your username" />
         </label>
         <label>Password
           <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required placeholder="Your password" />
@@ -28,6 +29,7 @@
       </form>
 
       <p class="auth-switch">New here? <a href="signup.html">Create an account</a></p>
+      <p class="auth-switch">Want a preview? <a href="demo.html">View demo</a></p>
     </section>
   </main>
 

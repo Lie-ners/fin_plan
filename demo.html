@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
+<meta content="dark light" name="color-scheme"/>
+<title>Dashboard Demo | Flexible Finance Tracker</title>
+<script src="theme.js"></script>
+<link href="styles.css" rel="stylesheet"/>
+</head>
+<body class="demo-mode" data-demo="true">
+<div class="shell" id="appView">
+<header class="dashboard-hero entrance entrance-1">
+<div class="dashboard-title-block">
+<p class="eyebrow">Interactive demo</p>
+<h1>Personal Finance Dashboard</h1>
+<p class="dashboard-greeting">Explore the dashboard as <strong id="userName">Demo User</strong>.</p>
+</div>
+<div class="dashboard-hero-side">
+<button aria-controls="accountPanel" aria-expanded="false" aria-label="Open demo appearance settings" class="user-profile-chip" id="accountPanelBtn" type="button">
+<span aria-hidden="true" class="user-avatar" id="userAvatar">?</span>
+<span class="user-profile-copy">
+<small>Demo profile</small>
+<strong id="userNameChip">—</strong>
+</span>
+<span aria-hidden="true" class="account-chip-chevron">›</span>
+</button>
+<div class="dashboard-primary-actions">
+
+<button class="button ghost danger-button" id="clearStatementTopBtn" type="button">Clear statement</button>
+<button class="button primary" id="addTransactionBtn" type="button">Add transaction</button>
+
+<a class="button ghost" href="index.html">Log in</a><a class="button primary" href="signup.html">Create account</a></div>
+</div>
+</header><section aria-label="Demo notice" class="demo-banner entrance entrance-2"><div><strong>Demo mode.</strong><span> Try the dashboard freely. Changes reset when you refresh.</span></div><div class="demo-actions"><span>No sign-in or bank connection needed.</span></div></section>
+<section aria-label="Dashboard controls" class="dashboard-toolbar entrance entrance-2">
+<div class="toolbar-copy">
+<span class="toolbar-kicker">Viewing period</span>
+<strong>Choose a date range</strong>
+</div>
+<div aria-label="Finance date range" class="period-range">
+<label><span>From</span><input id="periodFrom" type="month"/></label>
+<span class="period-separator">to</span>
+<label><span>To</span><input id="periodTo" type="month"/></label>
+<button class="button ghost compact-button" id="periodAllBtn" type="button">All history</button>
+</div>
+</section>
+<section class="privacy-note entrance entrance-2 account-note">
+<span aria-hidden="true" class="sync-dot"></span>
+<span><strong>Example data.</strong> This demo never connects to Supabase or a bank.</span>
+</section>
+<section aria-label="Statement details" class="statement-strip entrance entrance-3">
+<div><span>Finance history</span><strong id="rangeMeta">—</strong></div>
+<div><span>Available balance</span><strong id="availableMeta">—</strong></div>
+<div><span>Latest statement</span><strong id="statementDateMeta">—</strong></div>
+</section>
+<main>
+<section aria-label="Budget summary" class="kpi-grid entrance entrance-4">
+<article class="kpi featured">
+<span class="kpi-label">Spending allowance left</span>
+<strong id="remainingKpi">S$0.00</strong>
+<small id="remainingHint">Spendable allocation minus spending</small>
+</article>
+<article class="kpi">
+<span class="kpi-label">Payroll received</span>
+<strong id="payrollKpi">S$0.00</strong>
+<small id="payrollHint">Detected payroll credits</small>
+</article>
+<article class="kpi">
+<span class="kpi-label">Actual spending</span>
+<strong id="spendingKpi">S$0.00</strong>
+<small>Savings transfers excluded</small>
+</article>
+<article class="kpi">
+<span class="kpi-label">Reserve moved out</span>
+<strong id="reserveKpi">S$0.00</strong>
+<small id="reserveHint">Transfers to defined savings account</small>
+</article>
+</section>
+<section class="two-col top-panels entrance entrance-5">
+<article class="panel allocation-panel">
+<div class="panel-heading">
+<div>
+<p class="eyebrow">Your paycheck plan</p>
+<h2 id="allocationTitle">Flexible allocation</h2>
+</div>
+<button class="button ghost" id="settingsBtn" type="button">Edit plan</button>
+</div>
+<div aria-label="Budget allocation" class="allocation-bar" id="allocationBar"></div>
+<div class="allocation-cards" id="allocationCards"></div>
+<p class="muted small">Spendable categories form your allowance. The rest are set-aside targets.</p>
+</article>
+<article class="panel progress-panel">
+<div class="panel-heading">
+<div>
+<p class="eyebrow">Allowance usage</p>
+<h2>Spendable allocation used</h2>
+</div>
+<span class="badge" id="usageBadge">0%</span>
+</div>
+<div class="big-progress"><div id="usageBar"></div></div>
+<div class="progress-meta">
+<span><b id="spentMeta">S$0.00</b> spent</span>
+<span><b id="leftMeta">S$0.00</b> left</span>
+</div>
+<div class="budget-message" id="budgetMessage"></div>
+<div class="snapshot">
+<span>Latest statement snapshot</span>
+<strong id="snapshotBalance">—</strong>
+<small id="snapshotDate">Import a statement to start</small>
+</div>
+</article>
+</section>
+<section aria-labelledby="goalsTitle" class="panel goals-panel entrance entrance-6">
+<div class="panel-heading">
+<div>
+<p class="eyebrow">Saving goals</p>
+<h2 id="goalsTitle">What are you saving for?</h2>
+<p class="muted small goal-help">Track what you are saving for.</p>
+</div>
+<button class="button primary" id="addGoalBtn" type="button">Add goal</button>
+</div>
+<div class="goal-grid" id="goalGrid"></div>
+</section>
+<section class="panel trend-panel entrance entrance-6">
+<div class="panel-heading">
+<div>
+<p class="eyebrow">Trend</p>
+<h2>Allowance vs spending</h2>
+</div>
+<span class="badge" id="periodSummary">—</span>
+</div>
+<div aria-label="Monthly allowance versus spending chart" class="monthly-chart" id="monthlyChart"></div>
+</section>
+<section class="panel paychecks-panel entrance entrance-7">
+<div class="panel-heading">
+<div><p class="eyebrow">Paycheck planner</p><h2>Payroll and allocation</h2></div>
+<span class="muted" id="paycheckCount"></span>
+</div>
+<div class="table-scroll paycheck-scroll">
+<table id="paycheckTable">
+<thead><tr id="paycheckHeader"></tr></thead>
+<tbody id="paycheckRows"></tbody>
+</table>
+</div>
+</section>
+<section aria-labelledby="sheetViewerTitle" class="panel sheet-panel entrance entrance-8">
+<div class="panel-heading sheet-heading">
+<div>
+<p class="eyebrow">Latest source statement</p>
+<h2 id="sheetViewerTitle">Example statement data</h2>
+<p class="muted small sheet-help">Preview the example statement or export demo transactions.</p>
+</div>
+<div class="sheet-heading-actions">
+<span class="badge sheet-badge" id="sheetDimensions">—</span>
+<button class="button ghost danger-button" id="clearImportedBtn" title="Delete imported statement transactions while keeping manual entries, goals, and budget settings" type="button">Clear statement</button>
+<button class="button primary sheet-export-button" id="simplifyExportBtn" type="button">Simplify &amp; export</button>
+</div>
+</div>
+<div aria-label="Imported statement data preview" class="sheet-viewport" id="sheetViewport" role="region" tabindex="0">
+<table aria-label="Imported statement data" class="sheet-table" id="sheetTable"></table>
+</div>
+</section>
+</main>
+<footer class="entrance entrance-8">
+<span id="footerMeta">Loading your finance data…</span>
+<span>Public demo · changes reset on refresh</span>
+</footer>
+</div>
+<div class="account-panel-backdrop" hidden="" id="accountPanelBackdrop"></div>
+<aside aria-hidden="true" aria-labelledby="accountPanelTitle" class="account-panel" id="accountPanel">
+<div class="account-panel-header">
+<div>
+<p class="eyebrow">Demo</p>
+<h2 id="accountPanelTitle">Appearance</h2>
+<p class="muted small">Switch the demo between dark and bright mode.</p>
+</div>
+<button aria-label="Close account settings" class="icon-button" id="accountPanelClose" type="button">×</button>
+</div>
+<div class="account-panel-body">
+<section class="account-settings-section account-identity-section">
+<div class="account-settings-heading">
+<div>
+<h3>Account ID</h3>
+<p class="muted small">Permanent account identifier.</p>
+</div>
+</div>
+<label class="account-id-field">Account ID
+          <input aria-readonly="true" id="accountUserId" readonly="" type="text"/>
+</label>
+</section>
+<section class="account-settings-section account-appearance-section">
+<div class="account-settings-heading">
+<div>
+<h3>Appearance</h3>
+<p class="muted small">Choose dark or bright mode.</p>
+</div>
+</div>
+<label class="theme-switch-row" for="themeToggle">
+<span>Bright theme</span>
+<input aria-label="Use bright theme" id="themeToggle" role="switch" type="checkbox"/>
+</label>
+</section>
+<section class="account-settings-section">
+<div class="account-settings-heading">
+<div>
+<h3>Username</h3>
+<p class="muted small">Unique, not case-sensitive.</p>
+</div>
+</div>
+<form class="account-settings-form" id="usernameForm">
+<label>Username
+            <input autocomplete="nickname" id="accountUsername" maxlength="40" minlength="2" required="" type="text"/>
+</label>
+<p class="account-form-message" hidden="" id="usernameMessage" role="status"></p>
+<button class="button primary" type="submit">Save username</button>
+</form>
+</section>
+<section class="account-settings-section">
+<div class="account-settings-heading">
+<div>
+<h3>Email address</h3>
+<p class="muted small">You may need to confirm by email.</p>
+</div>
+</div>
+<form class="account-settings-form" id="emailForm">
+<label>Email
+            <input autocomplete="email" id="accountEmail" required="" type="email"/>
+</label>
+<p class="account-form-message" hidden="" id="emailMessage" role="status"></p>
+<button class="button primary" type="submit">Change email</button>
+</form>
+</section>
+<section class="account-settings-section">
+<div class="account-settings-heading">
+<div>
+<h3>Password</h3>
+<p class="muted small">Use at least 8 characters.</p>
+</div>
+</div>
+<form class="account-settings-form" id="passwordForm">
+<label>Current password
+            <input autocomplete="current-password" id="accountCurrentPassword" placeholder="Current password" type="password"/>
+</label>
+<label>New password
+            <input autocomplete="new-password" id="accountNewPassword" minlength="8" placeholder="At least 8 characters" required="" type="password"/>
+</label>
+<label>Confirm new password
+            <input autocomplete="new-password" id="accountConfirmPassword" minlength="8" required="" type="password"/>
+</label>
+<p class="account-form-message" hidden="" id="passwordMessage" role="status"></p>
+<button class="button primary" type="submit">Update password</button>
+</form>
+</section>
+<section class="account-settings-section account-danger-zone">
+<div class="account-settings-heading">
+<div>
+<p class="eyebrow danger-eyebrow">Danger zone</p>
+<h3>Delete account</h3>
+<p class="muted small">Deletes your account and all saved finance data. This cannot be undone.</p>
+</div>
+</div>
+<form class="account-settings-form" id="deleteAccountForm">
+<label>Type <strong>DELETE</strong> to confirm
+            <input autocapitalize="characters" autocomplete="off" id="deleteAccountConfirm" placeholder="DELETE" spellcheck="false" type="text"/>
+</label>
+<p class="account-form-message" hidden="" id="deleteAccountMessage" role="status"></p>
+<button class="button danger-button account-delete-button" disabled="" id="deleteAccountBtn" type="submit">Delete my account</button>
+</form>
+</section>
+</div>
+</aside>
+<dialog id="transactionDialog">
+<form class="dialog-card" id="transactionForm" method="dialog">
+<div class="dialog-heading">
+<div><p class="eyebrow">Manual entry</p><h2>Add transaction</h2></div>
+<button aria-label="Close" class="icon-button" data-close-dialog="" type="button">×</button>
+</div>
+<label>Date <input id="newDate" required="" type="date"/></label>
+<label>Description <input id="newDescription" placeholder="e.g. Lunch" required="" type="text"/></label>
+<div class="form-grid">
+<label>Type
+          <select id="newType"><option value="expense">Expense</option><option value="income">Income</option><option value="reserve">Reserve transfer</option></select>
+</label>
+<label>Amount (SGD) <input id="newAmount" min="0.01" required="" step="0.01" type="number"/></label>
+</div>
+<label>Category <select id="newCategory"></select></label>
+<p class="muted small dialog-note">Demo only. This entry resets when you refresh.</p>
+<p class="error" hidden="" id="transactionError"></p>
+<div class="dialog-actions"><button class="button ghost" data-close-dialog="" type="button">Cancel</button><button class="button primary" type="submit">Add</button></div>
+</form>
+</dialog>
+<dialog id="goalDialog">
+<form class="dialog-card" id="goalForm" method="dialog">
+<div class="dialog-heading">
+<div><p class="eyebrow">Saving goal</p><h2>Create a goal</h2></div>
+<button aria-label="Close" class="icon-button" data-close-dialog="" type="button">×</button>
+</div>
+<label>Goal name <input id="goalName" maxlength="80" placeholder="e.g. Used car, PS5, Japan trip" required="" type="text"/></label>
+<div class="form-grid">
+<label>Category <select id="goalCategory"></select></label>
+<label>Target amount <input id="goalTargetAmount" min="0.01" required="" step="0.01" type="number"/></label>
+</div>
+<div class="form-grid">
+<label>Already saved <input id="goalCurrentAmount" min="0" step="0.01" type="number" value="0"/></label>
+<label>Target date <input id="goalTargetDate" type="date"/></label>
+</div>
+<label>Notes <input id="goalNotes" maxlength="160" placeholder="Optional" type="text"/></label>
+<p class="error" hidden="" id="goalError"></p>
+<div class="dialog-actions"><button class="button ghost" data-close-dialog="" type="button">Cancel</button><button class="button primary" type="submit">Create goal</button></div>
+</form>
+</dialog>
+<dialog id="goalProgressDialog">
+<form class="dialog-card" id="goalProgressForm" method="dialog">
+<div class="dialog-heading">
+<div><p class="eyebrow">Goal progress</p><h2 id="goalProgressTitle">Update saved amount</h2></div>
+<button aria-label="Close" class="icon-button" data-close-dialog="" type="button">×</button>
+</div>
+<input id="goalProgressId" type="hidden"/>
+<label>Total saved so far <input id="goalProgressAmount" min="0" required="" step="0.01" type="number"/></label>
+<p class="muted small">Enter the total saved amount.</p>
+<p class="error" hidden="" id="goalProgressError"></p>
+<div class="dialog-actions"><button class="button ghost" data-close-dialog="" type="button">Cancel</button><button class="button primary" type="submit">Save progress</button></div>
+</form>
+</dialog>
+<dialog class="wide-dialog" id="settingsDialog">
+<form class="dialog-card" id="settingsForm" method="dialog">
+<div class="dialog-heading">
+<div><p class="eyebrow">Budget settings</p><h2>Build your paycheck allocation</h2></div>
+<button aria-label="Close" class="icon-button" data-close-dialog="" type="button">×</button>
+</div>
+<section aria-labelledby="presetHeading" class="preset-section">
+<div class="preset-heading">
+<div>
+<h3 id="presetHeading">Not sure where to start?</h3>
+<p class="muted small">Start with a preset, then edit it.</p>
+</div>
+</div>
+<div class="preset-grid" id="presetGrid"></div>
+</section>
+<div class="allocation-editor-heading">
+<div>
+<h3>Your categories</h3>
+<p class="muted small">Spendable categories form your spending allowance.</p>
+</div>
+<button class="button ghost" id="addAllocationBtn" type="button">Add category</button>
+</div>
+<div class="allocation-editor" id="allocationEditor"></div>
+<div class="allocation-total-row">
+<span>Total allocation</span>
+<strong id="allocationTotal">0%</strong>
+</div>
+<p class="error" hidden="" id="splitError">Allocation percentages must add up to exactly 100%, and every category needs a name.</p>
+<div class="dialog-actions"><button class="button ghost" data-close-dialog="" type="button">Cancel</button><button class="button primary" type="submit">Save plan</button></div>
+</form>
+</dialog>
+
+
+
+<script src="demo-data.js"></script><script src="parser.js"></script>
+<script src="console.js"></script>
+</body>
+</html>

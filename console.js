@@ -66,6 +66,7 @@
   ];
 
   const $ = id => document.getElementById(id);
+  const DEMO_MODE = document.body.dataset.demo === "true";
 
   function categoryId() {
     if (globalThis.crypto?.randomUUID) return `allocation-${crypto.randomUUID()}`;
@@ -268,8 +269,8 @@
     $("remainingHint").textContent = `${formatPercent(spendPct)} of payroll is marked spendable`;
     const diff = m.reserve - m.reserveTarget;
     $("reserveHint").textContent = m.reserveTarget > 0
-      ? `${diff >= 0 ? money(diff) + " above" : money(Math.abs(diff)) + " below"} non-spendable target`
-      : "No non-spendable allocation target";
+      ? `${diff >= 0 ? money(diff) + " above" : money(Math.abs(diff)) + " below"} non-spendable target · only defined savings transfers count`
+      : "Only transfers matched to a defined savings account count here";
   }
 
   function renderAllocation() {
@@ -305,11 +306,11 @@
     const message = $("budgetMessage");
     message.classList.toggle("over", m.remaining < 0);
     if (!state.transactions.length) {
-      message.textContent = "Import a statement to establish your finance history, then keep it updated with manual transactions.";
+      message.textContent = "Import a statement to start.";
     } else if (spendablePercent() === 0) {
-      message.textContent = "No allocation categories are marked as spendable. Edit the plan and mark one or more categories as spendable.";
+      message.textContent = "Mark at least one category as spendable.";
     } else if (m.payroll === 0 && m.spending > 0) {
-      message.textContent = "There is spending in the selected range but no detected payroll credit. Expand the date range or add missing income manually.";
+      message.textContent = "Spending found, but no payroll was detected in this range.";
     } else if (m.remaining < 0) {
       message.textContent = `Spending is ${money(Math.abs(m.remaining))} above the selected range's combined spendable allocation.`;
     } else {
@@ -404,10 +405,10 @@
           <span>${goal.targetDate ? `Target ${dateFmt(goal.targetDate)}` : "No target date"}</span>
         </div>
         ${goal.notes ? `<p class="goal-notes">${escapeHtml(goal.notes)}</p>` : ""}
-        <div class="goal-actions">
+        ${DEMO_MODE ? "" : `<div class="goal-actions">
           <button class="button ghost compact-button" type="button" data-goal-progress="${escapeAttr(goal.id)}">Update progress</button>
           <button class="link-button goal-delete" type="button" data-goal-delete="${escapeAttr(goal.id)}">Delete</button>
-        </div>
+        </div>`}
       </article>`;
     }).join("");
   }
@@ -780,9 +781,15 @@
 
   async function bootstrap() {
     try {
-      const loaded = await window.FinanceData.loadDashboardData();
+      const loaded = DEMO_MODE
+        ? window.FinanceDemoData.loadDashboardData()
+        : await window.FinanceData.loadDashboardData();
       state.user = loaded.user;
       state.profile = loaded.profile;
+      const savedTheme = String(loaded.user?.user_metadata?.theme || "").toLowerCase();
+      if ((savedTheme === "dark" || savedTheme === "light") && window.FinanceTheme) {
+        window.FinanceTheme.apply(savedTheme);
+      }
       state.transactions = loaded.transactions;
       state.statement = loaded.statement;
       state.sheetRows = loaded.sheetRows;
@@ -795,15 +802,20 @@
         state.settings = { categories: createCategories(loaded.settings.categories) };
       } else {
         state.settings = localSettingsFallback();
-        await window.FinanceData.saveSettings(state.settings.categories);
+        if (!DEMO_MODE) await window.FinanceData.saveSettings(state.settings.categories);
       }
 
-      if (!state.transactions.length && !state.statement) {
+      if (!DEMO_MODE && !state.transactions.length && !state.statement) {
         location.replace("import.html");
         return;
       }
 
       initializePeriodRange();
+      if (DEMO_MODE) {
+        const demoMonths = months();
+        periodStartMonth = demoMonths[0] || "";
+        periodEndMonth = demoMonths[demoMonths.length - 1] || "";
+      }
       renderAll();
       requestAnimationFrame(() => document.documentElement.classList.add("app-ready"));
     } catch (error) {
@@ -816,6 +828,7 @@
 
   function openAccountPanel() {
     syncAccountPanelFields();
+    $("themeToggle").checked = window.FinanceTheme?.current?.() === "light";
     ["usernameMessage", "emailMessage", "passwordMessage", "deleteAccountMessage"].forEach(id => setAccountMessage(id, ""));
     $("deleteAccountConfirm").value = "";
     $("deleteAccountBtn").disabled = true;
@@ -824,7 +837,7 @@
     $("accountPanel").setAttribute("aria-hidden", "false");
     $("accountPanelBtn").setAttribute("aria-expanded", "true");
     document.body.classList.add("account-panel-open");
-    window.setTimeout(() => $("accountUsername").focus(), 80);
+    window.setTimeout(() => $(DEMO_MODE ? "themeToggle" : "accountUsername").focus(), 80);
   }
 
   function closeAccountPanel() {
@@ -840,6 +853,18 @@
   $("accountPanelBackdrop").addEventListener("click", closeAccountPanel);
   document.addEventListener("keydown", event => {
     if (event.key === "Escape" && $("accountPanel").classList.contains("is-open")) closeAccountPanel();
+  });
+
+  $("themeToggle").addEventListener("change", async event => {
+    const theme = event.target.checked ? "light" : "dark";
+    window.FinanceTheme?.apply?.(theme);
+    if (DEMO_MODE) return;
+    try {
+      const user = await window.FinanceData.updateTheme(theme);
+      if (user) state.user = user;
+    } catch (error) {
+      console.error(error);
+    }
   });
 
   $("usernameForm").addEventListener("submit", async event => {
@@ -958,26 +983,25 @@
     flashRefresh();
   });
 
-  $("importStatementBtn").addEventListener("click", () => { location.href = "import.html?import=1"; });
-  $("signOutBtn").addEventListener("click", () => window.FinanceData.signOut());
+  $("importStatementBtn")?.addEventListener("click", () => { location.href = "import.html?import=1"; });
+  $("signOutBtn")?.addEventListener("click", () => window.FinanceData.signOut());
   $("simplifyExportBtn").addEventListener("click", exportSimplifiedTransactions);
 
-  $("clearImportedBtn").addEventListener("click", async event => {
+  async function clearImportedDataFromDashboard(button) {
     const importedCount = state.transactions.filter(transaction => transaction.sourceKind === "imported").length;
     if (!importedCount && !state.statement) {
-      alert("There is no imported statement data to clear.");
+      alert("No imported statement to clear.");
       return;
     }
 
     const message = importedCount
-      ? `Clear ${importedCount} imported transaction${importedCount === 1 ? "" : "s"} and the saved source statement?\n\nManual transactions, saving goals, and your budget plan will be kept.`
-      : "Clear the saved source statement?\n\nManual transactions, saving goals, and your budget plan will be kept.";
+      ? `Clear ${importedCount} imported transaction${importedCount === 1 ? "" : "s"} and the saved statement?\n\nManual transactions, goals, and your budget plan will stay.`
+      : "Clear the saved statement?\n\nManual transactions, goals, and your budget plan will stay.";
     if (!confirm(message)) return;
 
-    const button = event.currentTarget;
-    const original = button.textContent;
-    button.disabled = true;
-    button.textContent = "Clearing…";
+    const buttons = [$("clearImportedBtn"), $("clearStatementTopBtn")].filter(Boolean);
+    const labels = new Map(buttons.map(item => [item, item.textContent]));
+    buttons.forEach(item => { item.disabled = true; item.textContent = "Clearing…"; });
 
     try {
       await window.FinanceData.clearImportedData();
@@ -988,16 +1012,22 @@
       initializePeriodRange();
       renderAll();
       flashRefresh();
-      button.textContent = "Imported data cleared";
-      window.setTimeout(() => { button.textContent = original; }, 1400);
+      if (button) button.textContent = "Cleared";
     } catch (error) {
       console.error(error);
-      alert(error?.message || "Could not clear imported data.");
-      button.textContent = original;
+      alert(error?.message || "Could not clear the statement.");
     } finally {
-      button.disabled = false;
+      window.setTimeout(() => {
+        buttons.forEach(item => {
+          item.disabled = false;
+          item.textContent = labels.get(item) || "Clear statement";
+        });
+      }, 900);
     }
-  });
+  }
+
+  $("clearImportedBtn").addEventListener("click", event => clearImportedDataFromDashboard(event.currentTarget));
+  $("clearStatementTopBtn").addEventListener("click", event => clearImportedDataFromDashboard(event.currentTarget));
 
   const transactionDialog = $("transactionDialog");
   $("addTransactionBtn").addEventListener("click", () => {

@@ -31,21 +31,13 @@
   function mapTransaction(row) {
     const amount = Number(row.amount || 0);
     const sourceKind = row.source_kind || "imported";
-    const rawDescription = row.description || "Transaction";
-
-    // Repair rows imported by the first PDF parser version. DBS/POSB's PDF
-    // history exposes recurring base-account transfers as TRF FT...:IB (OCR
-    // can render IB as 1B). Those rows were previously saved as spending.
-    const legacyPdfReserve = sourceKind === "imported" && amount < 0 &&
-      /^trf\s+ft[0-9a-z]+.*:\s*[i1]b\b/i.test(String(rawDescription));
-
     return {
       id: row.id,
       date: row.transaction_date,
-      description: legacyPdfReserve ? "Transfer to other bank account" : rawDescription,
+      description: row.description || "Transaction",
       amount,
-      category: legacyPdfReserve ? "Reserve Transfer" : (row.category || "Other Spending"),
-      excludeFromSpending: legacyPdfReserve || Boolean(row.exclude_from_spending),
+      category: row.category || "Other Spending",
+      excludeFromSpending: Boolean(row.exclude_from_spending),
       isPayroll: Boolean(row.is_payroll),
       sourceCode: row.source_code || "",
       currency: row.currency || "SGD",
@@ -185,10 +177,7 @@
   function importedTransactionSignature(row) {
     const date = String(row.transaction_date ?? row.date ?? "").trim();
     const numericAmount = Number(row.amount || 0);
-    let description = String(row.description || "Transaction").trim().replace(/\s+/g, " ").toLowerCase();
-    if (numericAmount < 0 && /^trf\s+ft[0-9a-z]+.*:\s*[i1]b\b/i.test(description)) {
-      description = "transfer to other bank account";
-    }
+    const description = String(row.description || "Transaction").trim().replace(/\s+/g, " ").toLowerCase();
     const amount = numericAmount.toFixed(2);
     const sourceCode = String(row.source_code ?? row.sourceCode ?? "").trim().toUpperCase();
     const currency = String(row.currency || "SGD").trim().toUpperCase();
@@ -261,7 +250,9 @@
         available_balance: st.availableBalance ?? null,
         ledger_balance: st.ledgerBalance ?? null,
         sheet_rows: imported.sheetRows || [],
-        mask_rules: imported.maskRules || []
+        // Raw masking needles can contain account numbers or names. The rows
+        // are already masked before this point, so do not persist those secrets.
+        mask_rules: []
       })
       .select("id")
       .single();
@@ -407,6 +398,16 @@
     return { user: updatedUser, profile: mapProfile(profileRow) };
   }
 
+  async function updateTheme(theme) {
+    const user = await requireUser();
+    const clean = String(theme || "").toLowerCase();
+    if (!new Set(["dark", "light"]).has(clean)) throw new Error("Invalid theme.");
+    const metadata = { ...(user.user_metadata || {}), theme: clean };
+    const { data, error } = await client().auth.updateUser({ data: metadata });
+    if (error) throw error;
+    return data.user || user;
+  }
+
   async function updateEmail(email) {
     await requireUser();
     const clean = String(email || "").trim().toLowerCase();
@@ -471,6 +472,7 @@
     setGoalProgress,
     deleteGoal,
     updateUsername,
+    updateTheme,
     updateEmail,
     updatePassword,
     deleteAccount,

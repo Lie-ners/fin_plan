@@ -620,9 +620,16 @@
     return raw;
   }
 
-  function importStatementFromRows(rows, fileName, maskRules = []) {
-    const masks = normalizeMaskRules(maskRules);
-    const cleanRows = rows.map(row => Array.isArray(row) ? row.map(cell => maskValue(cell, masks)) : []);
+  function importStatementFromRows(rows, fileName, options = []) {
+    // Backwards compatibility: older callers passed maskRules as the third
+    // argument. New callers pass { maskRules, accountDefinitions }.
+    const importOptions = Array.isArray(options)
+      ? { maskRules: options, accountDefinitions: {} }
+      : (options || {});
+    const masks = normalizeMaskRules(importOptions.maskRules || []);
+    const accountDefinitions = normalizeAccountDefinitions(importOptions.accountDefinitions);
+    const sourceRows = rows.map(row => Array.isArray(row) ? row.slice() : []);
+    const cleanRows = sourceRows.map(row => row.map(cell => maskValue(cell, masks)));
     const headerIndex = cleanRows.findIndex(row => {
       const values = row.map(normalizeHeader);
       return values.includes("transactiondate") && values.includes("description") && (values.includes("debitamount") || values.includes("creditamount"));
@@ -644,9 +651,11 @@
 
     const statement = extractStatementMeta(cleanRows, maskValue(fileName, masks));
     const transactions = [];
+    let reserveTransferCount = 0;
 
     for (let i = headerIndex + 1; i < cleanRows.length; i++) {
       const row = cleanRows[i];
+      const sourceRow = sourceRows[i] || [];
       const rawDate = valueAt(row, dateCol);
       const rawDescription = valueAt(row, descCol);
       // Bank exports are inconsistent about whether debit/credit columns carry
@@ -659,6 +668,25 @@
       if (!date) continue;
       const amount = roundMoney(credit - debit);
       if (amount === 0) continue;
+
+      // Reserve detection must happen against the unmasked source row. This
+      // prevents a generic label such as "savings account" from deciding the
+      // category and makes the user's explicit savings-account definition the
+      // only automatic reserve-transfer rule.
+      const sourceRecord = {
+        rawDescription: String(valueAt(sourceRow, descCol) || ""),
+        supplementary: String(valueAt(sourceRow, suppCol) || ""),
+        supplementaryDescription: String(valueAt(sourceRow, suppDescCol) || ""),
+        clientReference: String(valueAt(sourceRow, clientRefCol) || ""),
+        additionalReference: String(valueAt(sourceRow, addRefCol) || ""),
+        sourceCode: String(valueAt(sourceRow, codeCol) || "").trim(),
+        currency: String(valueAt(sourceRow, currencyCol) || statement.currencyCode || "SGD").trim(),
+        debit,
+        credit,
+        amount
+      };
+      const reserveTransfer = isReserveRecord(sourceRecord, accountDefinitions);
+      if (reserveTransfer) reserveTransferCount++;
 
       const record = {
         rawDescription: String(rawDescription || ""),
@@ -673,15 +701,15 @@
         amount
       };
 
-      const description = simplifyDescription(record);
-      const category = guessCategory(record, description);
+      const description = simplifyDescription(record, reserveTransfer);
+      const category = guessCategory(record, description, reserveTransfer);
       transactions.push({
         id: `import-${transactions.length + 1}`,
         date,
         description,
         amount,
         category,
-        excludeFromSpending: amount < 0 && category === "Reserve Transfer",
+        excludeFromSpending: reserveTransfer,
         isPayroll: amount > 0 && category === "Income",
         sourceCode: record.sourceCode,
         currency: record.currency
@@ -692,7 +720,15 @@
     if (!statement.currencyCode) {
       statement.currencyCode = transactions.find(t => t.currency)?.currency || "SGD";
     }
-    return { statement, transactions, sheetRows: cleanRows };
+    return {
+      statement,
+      transactions,
+      sheetRows: cleanRows,
+      accountDetection: {
+        savingsDefined: Boolean(accountDefinitions.savingsAccount),
+        reserveTransferCount
+      }
+    };
   }
 
   function extractStatementMeta(rows, fileName) {
@@ -717,17 +753,45 @@
     return maskRules
       .map(rule => ({
         needle: String(rule?.needle || "").trim(),
-        replacement: String(rule?.replacement || "").trim()
+        replacement: String(rule?.replacement || "").trim(),
+        matchMode: rule?.matchMode === "account" ? "account" : "exact"
       }))
       .filter(rule => rule.needle && rule.replacement)
       .sort((a, b) => b.needle.length - a.needle.length);
+  }
+
+  function normalizeAccountIdentifier(value) {
+    return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  function normalizeAccountDefinitions(accountDefinitions) {
+    const source = accountDefinitions && typeof accountDefinitions === "object" ? accountDefinitions : {};
+    return {
+      mainAccount: String(source.mainAccount || "").trim(),
+      savingsAccount: String(source.savingsAccount || "").trim()
+    };
+  }
+
+  function accountIdentifierMatches(text, identifier) {
+    const needle = normalizeAccountIdentifier(identifier);
+    if (needle.length < 4) return false;
+    return normalizeAccountIdentifier(text).includes(needle);
+  }
+
+  function accountMaskRegex(identifier) {
+    const chars = String(identifier || "").toLowerCase().replace(/[^a-z0-9]/g, "").split("");
+    if (chars.length < 4) return null;
+    return new RegExp(chars.map(char => escapeRegExp(char)).join("[^a-z0-9]*"), "gi");
   }
 
   function maskValue(value, rules) {
     if (!rules.length || value == null || value === "") return value;
     let text = String(value);
     for (const rule of rules) {
-      text = text.replace(new RegExp(escapeRegExp(rule.needle), "gi"), rule.replacement);
+      const regex = rule.matchMode === "account"
+        ? accountMaskRegex(rule.needle)
+        : new RegExp(escapeRegExp(rule.needle), "gi");
+      if (regex) text = text.replace(regex, rule.replacement);
     }
     return text;
   }
@@ -801,7 +865,7 @@
     return Math.round(Number(value || 0) * 100) / 100;
   }
 
-  function simplifyDescription(record) {
+  function simplifyDescription(record, reserveTransfer = false) {
     const raw = compact(record.rawDescription);
     const supp = compact(record.supplementary);
     const client = compact(record.clientReference);
@@ -815,7 +879,7 @@
       return `Payroll — ${source || "Income"}`;
     }
     if (code === "ATINT" || /interest earned/i.test(hay)) return "Interest earned";
-    if (isReserveRecord(record)) return "Transfer to other bank account";
+    if (reserveTransfer) return "Transfer to savings account";
     if (code === "ATM" || /\bATM\b/i.test(hay)) return "ATM cash withdrawal";
 
     if (record.amount > 0 && /paynow/i.test(hay)) {
@@ -843,23 +907,18 @@
     return record.amount > 0 && record.sourceCode.toUpperCase() === "GR" && /^PAY\b/i.test(record.rawDescription.trim());
   }
 
-  function isReserveRecord(record) {
-    const hay = `${record.rawDescription} ${record.supplementary} ${record.clientReference} ${record.additionalReference}`.toLowerCase();
-    const compactHay = hay.replace(/\s+/g, " ").trim();
+  function isReserveRecord(record, accountDefinitions = {}) {
+    if (record.amount >= 0) return false;
+    const savingsAccount = String(accountDefinitions?.savingsAccount || "").trim();
+    if (!savingsAccount) return false;
 
-    // Spreadsheet exports often describe these explicitly as another/savings
-    // account. DBS/POSB PDF history instead emits rows such as
-    // "TRF FT260909... 272-198562-8:IB"; OCR may read IB as 1B. Those are
-    // the recurring base-account transfers that must not count as spending.
-    const pdfInterBankTransfer = /^trf\s+ft[0-9a-z]+.*:\s*[i1]b\b/i.test(compactHay);
-
-    return record.amount < 0 && (
-      /other bank account/.test(hay) ||
-      /savings account/.test(hay) ||
-      /reserve account/.test(hay) ||
-      /\[.*bank account.*\]:\s*[i1]b/.test(hay) ||
-      pdfInterBankTransfer
-    );
+    return [
+      record.rawDescription,
+      record.supplementary,
+      record.supplementaryDescription,
+      record.clientReference,
+      record.additionalReference
+    ].filter(Boolean).some(value => accountIdentifierMatches(value, savingsAccount));
   }
 
   function extractNamedParty(text, direction) {
@@ -894,13 +953,13 @@
     return String(value || "").replace(/\s+/g, " ").trim();
   }
 
-  function guessCategory(record, description) {
+  function guessCategory(record, description, reserveTransfer = false) {
     const code = record.sourceCode.toUpperCase();
     const hay = `${record.rawDescription} ${record.supplementary} ${record.supplementaryDescription} ${record.clientReference} ${record.additionalReference} ${description}`.toUpperCase();
 
     if (isPayrollRecord(record)) return "Income";
     if (code === "ATINT" || hay.includes("INTEREST EARNED")) return "Interest";
-    if (isReserveRecord(record)) return "Reserve Transfer";
+    if (reserveTransfer) return "Reserve Transfer";
     if (record.amount > 0) return hay.includes("REFUND") ? "Refund" : "Other Inflow";
     if (code === "ATM" || /\bATM\b/.test(hay)) return "Cash";
     if (/PAYNOW|NETS QR|ICT PAYNOW/.test(hay)) return "PayNow / QR";
